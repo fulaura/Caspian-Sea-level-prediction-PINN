@@ -1,0 +1,50 @@
+# Dataset (download via download_dataset.py)
+dataset/
+dataset.rar
+*.rar
+
+# Generated PDFs and LaTeX artifacts
+*.pdf
+*.aux
+*.log
+*.out
+*.blg
+*.bbl
+*.fdb_latexmk
+*.fls
+*.synctex.gz
+*.synctex
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.ipynb_checkpoints/
+*.egg-info/
+*.egg
+
+# Virtual env
+.venv/
+venv/
+.pdfenv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Agent artifacts
+analysis_results.md
+architecture_analysis.md
+handoff.md
+paper_assessment*.md
+loss_curves_with_physics.png
+revisions_analysis/
+
+# Model weights (large files)
+*.pth
+*.pt
+
+# Temp
+*.tmp
+*.swp
+*~

@@ -1,0 +1,4 @@
+Model,MAE,RMSE,R2_dh,R2_level
+PINN-1 (Mass balance),0.0379,0.048,0.701,0.827
+PINN-2 (Budyko),0.0513,0.0455,0.252,—
+PINN-3 (Penman),0.048,0.042,0.28,—

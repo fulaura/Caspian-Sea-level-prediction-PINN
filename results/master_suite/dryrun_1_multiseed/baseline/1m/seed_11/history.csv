@@ -1,0 +1,2 @@
+train_tot_loss,train_data_mse,train_phys_loss,val_mse
+0.871169775724411,0.871169775724411,0.0,0.006605166243389249

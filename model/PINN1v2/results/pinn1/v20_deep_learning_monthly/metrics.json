@@ -1,0 +1,16 @@
+{
+  "pinn": "PINN-1 (Water Balance / Mass Conservation)",
+  "version": "v20_deep_learning_monthly",
+  "mae_dh_test": 0.03788222372531891,
+  "rmse_dh_test": 0.04799150675535202,
+  "r2_dh_test": 0.701485276222229,
+  "corr_dh_test": 0.8385948656900523,
+  "mae_level_test": 0.16479431092739105,
+  "rmse_level_test": 0.1851315051317215,
+  "r2_level_test": 0.8268045783042908,
+  "alpha_E_avg": 0.7619039855505291,
+  "beta_volga_avg": 0.6163084977551511,
+  "gamma_other_avg": 0.18349000654722514,
+  "Q_in_m_avg": 0.03931685350835323,
+  "stopped_epoch": 102
+}

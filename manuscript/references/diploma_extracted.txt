@@ -1,0 +1,3413 @@
+
+================================================================================
+PAGE 1 of 89
+================================================================================
+
+Development of Physics-Informed Neural
+Networks (PINNs) for Predicting Variations in
+the Caspian Sea Level
+By
+Ashirbekov Bekzat, Mirseiit Arlan, Nurseit Amir
+School of Artificial Intelligence and Data Science
+Astana IT University
+6B06103 – Big Data Analysis
+Supervisor: Dr. Rakhimzhanova Anar
+June 2026
+Astana
+
+
+================================================================================
+PAGE 2 of 89
+================================================================================
+
+Abstract
+The Caspian Sea is a closed inland basin whose water level depends on the balance
+between atmospheric forcing, river inflow, evaporation, and basin storage, and reliable pre-
+diction is complicated by data fragmentation across satellite, reanalysis, river-discharge,
+and land-surface products. This study integrates ERA5, ERA5-Land, GLDAS, DAHITI,
+and Volga discharge data into a unified hydroclimatic dataset covering 1993–2026 and
+uses it to develop and compare three Physics-Informed Neural Network (PINN) formula-
+tions: a water-balance PINN (PINN-1), a Budyko-constrained runoff-partitioning PINN
+(PINN-2), and a Penman/Priestley–Taylor energy-balance PINN (PINN-3), all sharing a
+CNN–LSTM backbone, against a no-physics CNN–LSTM baseline trained under identical
+conditions. Daily, 10-day, and monthly resolutions were tested; the daily scale was unstable
+and excluded, while monthly aggregation proved most reliable. The no-physics baseline
+achieved the lowest monthly RMSE (0.0192 m), whereas PINN-3 achieved the highest
+correlation (0.8279) and R² (0.6841), and a five-seed test confirmed PINN-3 stability
+(RMSE = 0.0486 ± 0.0003). Because the 2018–2026 test period corresponds to a stronger
+declining regime than most of the training period, absolute water-level scores partly
+reflect trend-following ability, and the more conservative ∆H metrics provide a stricter
+indication of predictive skill. The contribution is twofold: a reproducible multi-source
+data-integration pipeline for closed-basin modelling, and an empirical demonstration that
+physics-informed constraints improve pattern-level agreement but do not automatically
+outperform a strong neural baseline on RMSE.
+Keywords: Caspian Sea level, Physics-Informed Neural Networks, PINN, CNN–LSTM,
+water balance, Budyko, Penman–Monteith, ERA5, GLDAS, DAHITI.
+i
+
+
+================================================================================
+PAGE 3 of 89
+================================================================================
+
+Author’s Declaration
+We declare that the work in this diploma project was carried out in accordance
+with the requirements of Astana IT University and has not been submitted
+for any other academic award. Except where indicated by specific references
+in the text, the work is our own. Work done in collaboration with, or with the
+assistance of, others is indicated as such. Any views expressed in the diploma
+project are those of the authors.
+SIGNED: . . . . . . . . . . . . . . . . . . . . . . . . . .
+DATE: . . . . . . . . . . . . . . . . . . . . . . . . . .
+SIGNED: . . . . . . . . . . . . . . . . . . . . . . . . . .
+DATE: . . . . . . . . . . . . . . . . . . . . . . . . . .
+SIGNED: . . . . . . . . . . . . . . . . . . . . . . . . . .
+DATE: . . . . . . . . . . . . . . . . . . . . . . . . . .
+ii
+
+
+================================================================================
+PAGE 4 of 89
+================================================================================
+
+Abbreviations and Definitions
+The following abbreviations, symbols, and terms are used in this work:
+Abbreviation /
+Symbol
+Definition
+ERA5
+Fifth-generation ECMWF atmospheric reanalysis product.
+ERA5-Land
+Land-surface reanalysis product derived from ERA5 for hydro-
+logical and surface variables.
+GLDAS
+Global Land Data Assimilation System hydrological dataset.
+DAHITI
+Database for Hydrological Time Series of Inland Waters (satellite
+altimetry-based water level product).
+PINN
+Physics-Informed Neural Network.
+PINN-1
+Water-balance-constrained neural network formulation.
+PINN-2
+Budyko-constrained neural network formulation for basin runoff
+partitioning.
+PINN-3
+Penman-constrained neural network formulation for evaporation
+and energy-balance effects.
+t2m
+2 m air temperature.
+d2m
+2 m dew point temperature.
+u10, v10
+Zonal and meridional wind components at 10 m height.
+Rn
+Net radiation.
+∆S
+Change in lake storage.
+∆H
+Change in water level over the selected temporal interval.
+H
+Absolute water level of the Caspian Sea.
+Plake
+Precipitation over the lake surface.
+Elake
+Evaporation from lake surface.
+Qin
+Total basin inflow to the lake.
+ε
+Residual term for unresolved processes and uncertainty.
+E
+Actual evapotranspiration (basin scale).
+Ep
+Potential evapotranspiration.
+ϕ
+Dryness index, typically Ep/P.
+ω
+Budyko curve parameter controlling catchment behavior.
+iii
+
+
+================================================================================
+PAGE 5 of 89
+================================================================================
+
+ABBREVIATIONS AND DEFINITIONS
+ET0
+Reference evapotranspiration in FAO Penman–Monteith formu-
+lation.
+k
+Scaling factor linking reference evapotranspiration to lake evap-
+oration.
+RMSE
+Root Mean Squared Error, used to measure average prediction
+error magnitude.
+MAE
+Mean Absolute Error, used to measure average absolute recon-
+struction error.
+R2
+Coefficient of determination, showing the share of observed
+variance explained by the model.
+Correlation
+Linear association between observed and predicted water-level
+changes.
+iv
+
+
+================================================================================
+PAGE 6 of 89
+================================================================================
+
+List of Tables
+3.1
+Chronological data split used for the monthly PINN experiments. . . . . . .
+25
+3.2
+Core gridded predictor variables in the final datasets. . . . . . . . . . . . . .
+26
+3.3
+River forcing and water-level target variables.
+. . . . . . . . . . . . . . . . .
+27
+3.4
+Conceptual comparison of the three PINN formulations.
+. . . . . . . . . . .
+28
+4.1
+Evaluation results for the daily dataset. . . . . . . . . . . . . . . . . . . . . .
+46
+4.2
+Evaluation results for the 10-day dataset. . . . . . . . . . . . . . . . . . . . .
+48
+4.3
+Evaluation results for the monthly dataset. . . . . . . . . . . . . . . . . . . .
+50
+4.4
+Monthly ablation study with and without physics-informed loss. The no-
+physics CNN–LSTM baseline achieves the lowest RMSE, while PINN-3
+achieves the highest correlation and R2.
+. . . . . . . . . . . . . . . . . . . .
+52
+4.5
+PINN-1 evaluation results on the 10-day dataset.
+. . . . . . . . . . . . . . .
+54
+4.6
+PINN-2 evaluation results on the 10-day dataset.
+. . . . . . . . . . . . . . .
+56
+4.7
+PINN-3 evaluation results on the 10-day dataset.
+. . . . . . . . . . . . . . .
+58
+4.8
+Comparative evaluation of all PINN models on the 10-day dataset.
+. . . . .
+59
+4.9
+PINN-1 evaluation results on the monthly dataset.
+. . . . . . . . . . . . . .
+60
+4.10 PINN-2 reference formulation evaluation results on the monthly dataset.
+. .
+62
+4.11 PINN-3 evaluation results on the monthly dataset.
+. . . . . . . . . . . . . .
+63
+4.12 Final comparison of PINN models on 10-day and monthly datasets. . . . . .
+65
+4.13 Multi-seed stability of monthly PINN-3 on the test period. . . . . . . . . . .
+68
+v
+
+
+================================================================================
+PAGE 7 of 89
+================================================================================
+
+List of Figures
+3.1
+Overall preprocessing and quality-control pipeline used to transform raw
+multi-source datasets into model-ready PINN inputs. . . . . . . . . . . . . .
+22
+3.2
+Spatial distribution of evaporation (e) and 2-metre dewpoint temperature
+(d2m) over the Caspian Sea region in July 2020. . . . . . . . . . . . . . . . .
+23
+3.3
+Caspian Sea ERA5 lake-scale grid after application of the land–water mask.
+23
+3.4
+Dahiti dataset of Caspian Sea Water Level Dynamics between 1993 and 2026
+25
+4.1
+Implemented CNN–LSTM architecture of PINN-1 water-balance model. . . .
+41
+4.2
+Implemented CNN–LSTM architecture of PINN-2 used for temporal resolution
+evaluation. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+43
+4.3
+CNN–LSTM architecture of PINN-3 with the four-head regressor: ∆h pre-
+diction plus three softplus-activated physics coefficients (αPT, Cwind, γrunoff).
+The CNN–LSTM backbone is identical to that of PINN-2 (Figure 4.2); the
+only architectural difference is the addition of the Cwind output head. . . . .
+45
+4.4
+PINN-2 prediction results on the daily dataset: daily water-level change
+prediction and reconstructed absolute water level. . . . . . . . . . . . . . . .
+47
+4.5
+PINN-2 prediction results on the 10-day dataset: 10-day water-level change
+prediction and reconstructed absolute water level. . . . . . . . . . . . . . . .
+49
+4.6
+PINN-2 prediction results on the monthly dataset: monthly water-level change
+prediction and reconstructed absolute water level. . . . . . . . . . . . . . . .
+51
+4.7
+Monthly no-physics CNN–LSTM baseline prediction of Caspian Sea level
+change during the test period. The baseline reproduces the main monthly
+variability of ∆H, achieving RMSE = 0.0192 m and R2 = 0.6305. . . . . . .
+53
+4.8
+PINN-1 prediction results on the 10-day dataset: water-level change prediction
+and reconstructed absolute water level. . . . . . . . . . . . . . . . . . . . . .
+55
+4.9
+PINN-2 prediction and reconstructed absolute water level for the 10-day dataset. 57
+4.10 PINN-3 test-set reconstruction on the 10-day dataset. . . . . . . . . . . . . .
+58
+vi
+
+
+================================================================================
+PAGE 8 of 89
+================================================================================
+
+LIST OF FIGURES
+4.11 PINN-1 prediction results on the monthly dataset: monthly water-level change
+prediction and reconstructed absolute water level. . . . . . . . . . . . . . . .
+61
+4.12 PINN-2 monthly model performance: Delta H prediction comparison (top)
+and absolute water level reconstruction tracking (bottom). . . . . . . . . . .
+62
+4.13 PINN-3 test-set reconstruction on the monthly dataset. . . . . . . . . . . . .
+64
+4.14 PINN-3 monthly training loss history showing data loss, Penman physics loss,
+and validation loss. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+64
+4.15 Distribution of PINN-3 test metrics across five random seeds for monthly ∆H
+prediction. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+69
+4.16 Mean PINN-3 reconstructed water-level trajectory with ±1σ uncertainty
+envelope across five seeds. . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+69
+vii
+
+
+================================================================================
+PAGE 9 of 89
+================================================================================
+
+Table of Contents
+Abstract
+i
+Author’s Declaration
+ii
+Abbreviations and Definitions
+iii
+List of Tables
+v
+List of Figures
+vi
+1
+Introduction
+1
+1.1
+Background . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+1
+1.2
+Aim and Method . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+2
+1.3
+Basis and Scope . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+3
+2
+Literature Review and Theoretical Foundations
+4
+2.1
+Conceptual Foundations . . . . . . . . . . . . . . . . . . . . . . . . . . .
+4
+2.2
+Hydroclimatic Context . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+5
+2.3
+Caspian-Specific Studies Based on Climate and Remote Sensing . . . . .
+6
+2.4
+Closed-Basin Hydrology and Water-Balance Modeling . . . . . . . . . . .
+7
+2.5
+Physics-Informed Neural Networks and Scientific Machine Learning
+. . .
+8
+2.6
+Physics-Guided Hydrological Learning and Budyko-Based Constraints . .
+9
+2.7
+Methodological Comparison . . . . . . . . . . . . . . . . . . . . . . . . .
+10
+2.7.1
+Mathematical Formulations
+. . . . . . . . . . . . . . . . . . . . .
+11
+2.8
+Main Findings . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+14
+2.9
+Research Gaps . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+15
+2.10 Synthesis . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+16
+3
+Methods
+17
+viii
+
+
+================================================================================
+PAGE 10 of 89
+================================================================================
+
+TABLE OF CONTENTS
+3.1
+Research Design Overview . . . . . . . . . . . . . . . . . . . . . . . . . .
+17
+3.2
+Data Sources and Variable Derivation . . . . . . . . . . . . . . . . . . . .
+18
+3.2.1
+Source Structure
+. . . . . . . . . . . . . . . . . . . . . . . . . . .
+18
+3.2.2
+ERA5 Lake-Scale Atmospheric Variables . . . . . . . . . . . . . .
+18
+3.2.3
+ERA5-Land Basin-Scale Variables . . . . . . . . . . . . . . . . . .
+19
+3.2.4
+GLDAS Hydrological Variables
+. . . . . . . . . . . . . . . . . . .
+19
+3.2.5
+Observed and Proxy Inflow Variables . . . . . . . . . . . . . . . .
+20
+3.2.6
+River Discharge Variables
+. . . . . . . . . . . . . . . . . . . . . .
+20
+3.2.7
+Lake-Level Targets . . . . . . . . . . . . . . . . . . . . . . . . . .
+21
+3.3
+Preprocessing and Quality Control
+. . . . . . . . . . . . . . . . . . . . .
+21
+3.4
+Final Dataset Design . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+25
+3.5
+PINN Model Formulations . . . . . . . . . . . . . . . . . . . . . . . . . .
+27
+3.5.1
+PINN-1: Water Balance / Mass Conservation Model . . . . . . . .
+28
+3.5.2
+PINN-2: Budyko-Constrained Model
+. . . . . . . . . . . . . . . .
+30
+3.5.3
+PINN-3: Penman / Priestley–Taylor Energy-Balance Constraint .
+31
+3.6
+Training and Comparative Evaluation Design
+. . . . . . . . . . . . . . .
+34
+3.7
+Methodological Limitations
+. . . . . . . . . . . . . . . . . . . . . . . . .
+35
+4
+Results and Discussion
+39
+4.1
+Experimental Setup . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+39
+4.2
+Overview of PINN Models . . . . . . . . . . . . . . . . . . . . . . . . . .
+39
+4.2.1
+PINN-1 Architecture and Experimental Setup . . . . . . . . . . .
+40
+4.2.2
+PINN-2 (Budyko-Constrained Model) Setup . . . . . . . . . . . .
+42
+4.2.3
+PINN-3 (Penman-Based Evaporation Constraint) Setup . . . . . .
+44
+4.3
+Temporal Resolution Selection Using PINN-2 . . . . . . . . . . . . . . . .
+46
+4.3.1
+Daily Dataset Results
+. . . . . . . . . . . . . . . . . . . . . . . .
+46
+4.3.2
+10-Day Dataset Results . . . . . . . . . . . . . . . . . . . . . . . .
+48
+4.3.3
+Monthly Dataset Results . . . . . . . . . . . . . . . . . . . . . . .
+49
+4.3.4
+Final Choice of Temporal Resolutions . . . . . . . . . . . . . . . .
+51
+4.4
+Main Comparative Result
+. . . . . . . . . . . . . . . . . . . . . . . . . .
+52
+4.5
+Comparison of PINN Models on the 10-Day Dataset . . . . . . . . . . . .
+53
+4.6
+Comparison of PINN Models on the Monthly Dataset . . . . . . . . . . .
+60
+4.7
+Multi-Seed Stability Analysis for PINN-3 . . . . . . . . . . . . . . . . . .
+68
+4.8
+Threats to Validity . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+70
+5
+Conclusion
+72
+ix
+
+
+================================================================================
+PAGE 11 of 89
+================================================================================
+
+TABLE OF CONTENTS
+Bibliography
+75
+x
+
+
+================================================================================
+PAGE 12 of 89
+================================================================================
+
+Chapter 1
+Introduction
+1.1
+Background
+Caspian Sea level changes are a major climate-related problem with serious impacts on
+the environment, economy, and society. As the world’s largest inland body of water, the
+Caspian Sea is not connected to the ocean; its water level depends on regional weather
+patterns, river flows, and how water and energy move within the basin. Monthly changes
+are mainly caused by rainfall on the lake surface, evaporation, river inflow, and seasonal
+water storage in the surrounding land. Recent satellite measurements show a worrying
+trend: the water level has already dropped by about 1.5 m between 1996 and 2021, mainly
+because of less water coming from the Volga River and higher evaporation caused by
+rising temperatures [8]. Climate projection studies based on CMIP6 simulations indicate
+that the Caspian Sea level may continue to decline substantially under intermediate and
+high-emission scenarios during the twenty-first century [7].
+Predicting these changes is methodologically difficult. Standard machine learning methods
+can be accurate in the short term, but they often ignore the laws of physics and may fail
+as the climate continues to shift. Traditional physical models are more transparent, but
+they can be unreliable when input data is uncertain or oversimplified. Existing research
+also lacks a unified framework that can represent Caspian Sea dynamics at a monthly
+scale while maintaining physically meaningful relationships between atmospheric forcing,
+basin inflow, and evaporation.
+A practical challenge is data fragmentation: relevant information is scattered across
+different sources with inconsistent resolutions and formats. This creates a need for
+1
+
+
+================================================================================
+PAGE 13 of 89
+================================================================================
+
+CHAPTER 1. INTRODUCTION
+Physics-Informed Neural Networks (PINNs), which combine the flexibility of AI with
+explicit physical constraints. The object of this study is the monthly water-level dy-
+namics of the Caspian Sea as represented through hydroclimatic, hydrological, and
+satellite-altimetry observations. The subject is the development of physically constrained
+neural-network models that preserve water-balance, runoff-partitioning, and evaporation
+relationships. The current state of the problem shows that climate projections, reanalysis-
+based hydrological methods, and satellite-based machine learning each provide useful
+insight, but they are often applied separately.
+1.2
+Aim and Method
+The aim of this research is to develop and apply Physics-Informed Neural Network
+(PINN) models to predict variations and future fluctuations of the Caspian Sea level
+by embedding physically meaningful hydrological and energy-based constraints into the
+learning process. By incorporating water balance, basin-scale inflow partitioning, and
+energy-constrained evaporation formulations, the study seeks to improve the physical
+consistency, stability, and predictive reliability of closed sea level forecasts.
+The objectives of the thesis are:
+• to construct a consistent monthly master dataset by integrating ERA5, ERA5-Land,
+GLDAS, and DAHITI sources over Caspian Sea coordinates;
+• to derive and harmonize physically meaningful atmospheric, hydrological, and
+lake-level variables from 1993 until 2026;
+• to develop and train three PINN formulations with distinct physical constraints;
+• to establish a comparative analytical framework for assessing how alternative
+physical structures influence Caspian Sea level modeling.
+The method of the study consists of constructing a unified monthly dataset, deriving
+diagnostic variables, and comparing three PINN formulations. The first formulation
+is based on lake water balance, the second introduces basin–lake coupling through
+Budyko-constrained runoff partitioning, and the third constrains evaporation through an
+energy-aware Penman–Monteith structure.
+The main research questions:
+• What data integration and harmonization strategies are required to transform
+2
+
+
+================================================================================
+PAGE 14 of 89
+================================================================================
+
+CHAPTER 1. INTRODUCTION
+fragmented, multi-source hydroclimatic and altimetry data into a consistent monthly
+dataset for physics-informed learning?
+• How does the systematic enforcement of different physical constraints — specifically
+water balance, basin runoff, and evaporation formulations — impact the predictive
+accuracy and physical interpretability of Caspian Sea level models?
+• To what extent does a multi-constrained PINN architecture provide additional
+physical structure and interpretability compared with unconstrained machine
+learning or single-equation models in the context of extreme climate-driven water
+level decline?
+1.3
+Basis and Scope
+The theoretical basis of the research includes closed-basin hydrology, water-balance
+modeling, Budyko-type runoff partitioning, Penman–Monteith evaporation theory, and
+physics-informed machine learning. The methodological basis is formed by multi-source
+data harmonization, monthly time-series modeling, feature derivation from reanalysis and
+satellite products, and comparative evaluation of physically constrained neural-network
+architectures.
+This study provides methodological value by addressing both data integration and
+structural modeling challenges. On the data side, it establishes a reproducible monthly
+integration pipeline that synchronizes atmospheric reanalysis, land-surface hydrology,
+and satellite altimetry products. From a modeling perspective, the research compares
+three physically grounded PINN designs, each targeting a different component of the
+same closed-basin system. This approach supports physical structure and interpretability
+while retaining more flexibility than rigid deterministic formulations.
+Several limitations are recognized. The study integrates sources with different temporal
+resolutions, spatial grids, and variable conventions, so harmonization may introduce
+minor uncertainty. Data acquisition was also limited by repository extraction speeds,
+and defining the correct lake and basin coordinates required trial and error. Finally, the
+monthly resolution supports long-term climate modeling but smooths short-term events
+such as extreme weather surges or rapid discharge changes.
+3
+
+
+================================================================================
+PAGE 15 of 89
+================================================================================
+
+Chapter 2
+Literature Review and Theoretical
+Foundations
+2.1
+Conceptual Foundations
+Research on Caspian Sea level prediction brings together several areas that are usually
+studied separately: climate science, hydrology, remote sensing, and scientific machine
+learning. For this thesis, the relevant literature is therefore not only the group of studies
+written directly about the Caspian Sea. It also includes work on satellite and reanalysis
+products, because these data sources are needed to describe water-level variability, and
+work on physics-informed or physics-guided learning, because these methods explain how
+physical knowledge can be added to data-driven models [7].
+One important idea in this literature is that “physics-informed” is not one fixed method.
+Raissi et al. present the classical PINN approach, where the residual of a governing
+differential equation is added to the neural-network loss function [6]. Huang et al. use a
+different type of physical guidance by adding geostrophic balance and spatial masking to
+sea-surface-height prediction [1]. Bhasme et al. apply the same general idea in hydrology,
+where consistency is based more on water-balance logic and process structure than on a
+complete partial differential equation [9]. Although these studies use different technical
+designs, they share the same basic principle: the model should not learn only from
+statistical patterns, but should also be guided by what is already known about the
+physical system [6].
+This point matters for the Caspian Sea because its level is not controlled by one simple
+4
+
+
+================================================================================
+PAGE 16 of 89
+================================================================================
+
+CHAPTER 2. LITERATURE REVIEW AND THEORETICAL FOUNDATIONS
+variable. It is a closed basin, so changes in level depend on the combined effects of basin
+runoff, precipitation over the sea, evaporation from the surface, terrestrial storage, and
+long-term climate forcing [7]. For that reason, reviewing the literature only as a list of
+prediction models would be incomplete. The more important question is which physical
+assumptions are reliable, which datasets can represent the main processes, and which
+modeling approaches can work with noisy or incomplete observations while still remaining
+interpretable [8].
+Overall, the reviewed studies suggest that a useful Caspian Sea forecasting framework
+needs four main elements: basin-scale climate forcing, calibration against observations,
+hydrologically meaningful constraints, and a learning model that is flexible enough to
+handle nonlinearity and missing or imperfect data [7]. Since these elements are rarely
+combined in one Caspian-specific model, the problem remains open and appropriate for
+this thesis [9].
+2.2
+Hydroclimatic Context
+The physical setting of the Caspian Sea itself explains much of the forecasting challenge.
+Samant and Prange describe the Caspian drainage basin as roughly ten times larger than
+the sea surface and fed by approximately 130 rivers, with the Volga River supplying
+the dominant share of total inflow [7]. In such a system, sea-level change cannot be
+interpreted as a purely local coastal process. It is the integrated outcome of atmospheric
+forcing, land-surface hydrology, river inflow, and lake-surface evaporation across a vast
+and climatically heterogeneous basin [7].
+The climate projection literature further shows that the problem extends well beyond
+short-term variability. According to Samant and Prange, projected increases in evaporation
+are expected to exceed projected increases in precipitation across the basin during the
+twenty-first century, resulting in a progressively more negative water balance [7]. Their
+CMIP6-based analysis suggests substantial end-of-century water-level decline under
+both intermediate and high-emission scenarios [7]. These projected changes imply major
+ecological, economic, and infrastructural consequences, including shoreline transformation,
+disruption of navigation, fishery impacts, and stress on coastal systems [7].
+That same study highlights an additional modeling issue: the importance of physically
+realistic lake representation. Several CMIP6 models had to be excluded because the
+5
+
+
+================================================================================
+PAGE 17 of 89
+================================================================================
+
+CHAPTER 2. LITERATURE REVIEW AND THEORETICAL FOUNDATIONS
+Caspian Sea surface was represented incorrectly, producing distorted surface area and
+evaporation estimates [7]. For a closed basin, such geometric representation is not a minor
+technical detail. Surface area directly affects the fluxes that determine the water balance,
+implying that forecasting systems should not assume fixed lake area when substantial
+water-level change is expected [7].
+At shorter forecast horizons, Eftekhari et al. show that machine-learning methods applied
+to GRACE and GRACE-FO observations can extract useful water-level signals for the
+southern Caspian coast [3]. Their results demonstrate the predictive value of remote
+sensing, but also reveal the limitations of unconstrained machine learning. A model
+may reproduce past water-level patterns without clarifying the hydrological mechanisms
+producing those patterns [3]. Under conditions of climatic nonstationarity, this limitation
+becomes particularly important [3].
+2.3
+Caspian-Specific Studies Based on Climate and
+Remote Sensing
+Among Caspian-specific studies, Samant and Prange provide the clearest large-scale
+assessment of the long-term decline problem [7]. Their contribution lies not only in
+estimating future water-level reduction, but also in the selective treatment of the CMIP6
+ensemble. Rather than averaging all models indiscriminately, they exclude models with
+weak regional performance or unrealistic Caspian representation [7]. This improves the
+credibility of their projections. However, the study remains a scenario-based climate
+assessment rather than an operational forecasting system. It identifies the dominant
+hydroclimatic pressures, but does not provide a framework capable of continuously
+assimilating new observations, adapting to recent dynamics, or explicitly resolving short-
+term fluctuations [7].
+Eftekhari et al. occupy the opposite end of the methodological spectrum [3]. Their
+study is more local, more operational, and more directly predictive. Using GRACE and
+GRACE-FO observations for the period 2003-2023 and validating against the Anzali Port
+tide-gauge record, they compare Decision Tree, Random Forest, and Multivariate Adaptive
+Regression Splines [3]. The MARS model achieves the best predictive performance and is
+then extended for forecasting to 2040 [3]. This study is important because it shows that
+remote-sensing data alone can support meaningful regional prediction. At the same time,
+6
+
+
+================================================================================
+PAGE 18 of 89
+================================================================================
+
+CHAPTER 2. LITERATURE REVIEW AND THEORETICAL FOUNDATIONS
+the approach remains primarily statistical. It does not impose basin-wide water-balance
+structure, runoff-generation constraints, or evaporation limits, and its validation remains
+geographically narrow relative to the full scale of the Caspian Sea [3].
+Taken together, these two studies point toward the same broader conclusion. The climate-
+projection literature shows that long-term decline is driven by worsening water balance,
+especially increasing evaporation [7]. The satellite-based machine-learning literature
+shows that observational data contain strong predictive signals [3]. What remains missing
+is a modeling framework that combines these two insights by learning from data while
+preserving the hydrological structure of a closed basin [7].
+2.4
+Closed-Basin Hydrology and Water-Balance
+Modeling
+The water-balance literature is especially relevant because the Caspian Sea is a closed
+basin. In such systems, water-level variation is inseparable from storage accounting and
+flux partitioning [8]. Saraceni et al. propose a reconstruction procedure combining ERA5-
+Land variables with observed lake-level data to reproduce historical level changes in closed
+lakes [8]. Their results show that relatively short observation records can still be useful
+when paired with reanalysis-based estimates of precipitation, runoff, and evaporation [8].
+This is both methodologically and practically important, as it shows that reanalysis can
+provide continuous forcing while direct observations remain necessary for calibration and
+drift correction [8].
+Saraceni et al. are also explicit about the limits of their approach [8]. Occasional mis-
+matches in reconstructed water balance are attributed mainly to precipitation biases in
+ERA5-Land [8]. This is an important lesson for Caspian research: physically structured
+forcing data are valuable, but should not be treated as ground truth. Instead, they are
+best used as one component of a broader fused evidence framework that includes direct
+observations [8].
+Niedda et al. offer a longer-term physically based analysis through simulation of a closed
+catchment-lake system in a semi-arid Mediterranean environment over 85 years [5]. Their
+study combines rainfall-runoff modeling with energy-budget reasoning and shows that
+precipitation is the dominant control on multi-year streamflow variability, while land-use
+change affects hydrological behavior through changes in soil properties and catchment
+7
+
+
+================================================================================
+PAGE 19 of 89
+================================================================================
+
+CHAPTER 2. LITERATURE REVIEW AND THEORETICAL FOUNDATIONS
+response [5]. Although the study is not Caspian-specific, it clarifies how closed-basin
+systems can be modeled in a hydrologically interpretable way [5].
+Together, these studies demonstrate why direct end-to-end prediction of water level
+can be unsatisfactory if internal fluxes are ignored. A model may reproduce observed
+levels numerically without explaining whether changes arise from reduced inflow, en-
+hanced evaporation, altered seasonal partitioning, or forcing-data bias [8]. Water-balance
+frameworks preserve the visibility of these causal pathways [5].
+2.5
+Physics-Informed Neural Networks and Scientific
+Machine Learning
+Raissi et al. remain the foundational reference for strict physics-informed neural networks
+[6]. In their framework, a neural network is trained not only to fit observed data, but
+also to minimize the residual of the governing differential equation [6]. This formulation
+introduced a new paradigm in which scientific computing becomes a joint optimization
+problem balancing empirical fit and physical consistency [6]. Its relevance lies not only
+in methodological novelty, but also in its suitability for systems where observations are
+sparse while governing laws are partially known [6].
+Cuomo et al. provide an important review of this literature while emphasizing that PINNs
+are not a complete solution in themselves [11]. Their study documents the growth of PINN
+variants and identifies several unresolved issues, including weak theoretical guarantees,
+optimization instability, sensitivity to activation functions, and the difficulty of balancing
+multiple loss terms [11]. This is especially relevant for environmental applications, where
+model training may involve simultaneous data-fit, equation, boundary-condition, and
+regularization losses [11]. The inclusion of physics is therefore not automatically beneficial;
+its effectiveness depends strongly on how constraints are specified and weighted [11].
+Podina et al. extend the field through Universal PINNs, which combine known operator
+structure with a neural component representing unknown terms and then use symbolic
+regression to recover hidden dynamics [2]. This approach is particularly relevant for
+hydrology and climate applications, where the governing physical structure is often
+incomplete rather than fully absent [2]. Their work shows that physics-informed learning
+can serve not only as a predictive framework, but also as a tool for discovering missing
+structure in sparse and noisy systems [2].
+8
+
+
+================================================================================
+PAGE 20 of 89
+================================================================================
+
+CHAPTER 2. LITERATURE REVIEW AND THEORETICAL FOUNDATIONS
+Huang et al. provide one of the most useful transfer cases for future Caspian appli-
+cations [1]. In their work on sea-surface-height prediction in the South China Sea,
+forecast accuracy is improved through land-mask information, geostrophic constraints,
+and latitude-dependent weighting [1]. Their results show that physically informed regular-
+ization can enhance performance, but also demonstrate that stronger physical constraint
+does not always produce better forecasts [1]. When the geostrophic loss is weighted too
+heavily, predictive performance declines because the real system is not governed solely by
+geostrophic balance [1]. This is a valuable result because it rejects both unconstrained
+black-box learning and naive over-constrained modeling [1].
+2.6
+Physics-Guided Hydrological Learning and
+Budyko-Based Constraints
+Bhasme et al. move away from strict PDE-residual PINNs and instead develop a physics-
+informed machine-learning framework grounded in conceptual hydrological structure [9].
+Their model is designed to predict streamflow and actual evapotranspiration while preserv-
+ing physical consistency in the water balance [9]. This is highly relevant to the Caspian
+problem because it illustrates a practical middle path between rigid mechanistic modeling
+and unconstrained statistical learning [9]. Rather than requiring a complete differential
+specification of the full system, the model constrains learning through hydrological logic
+and physically plausible intermediate states [9].
+Esmaeilzadeh and Amirzadeh reinforce the relevance of this framework through replication
+[4]. Using the original data structure and code logic, they show that the physics-guided
+approach can provide additional physical structure and interpretability relative to stan-
+dalone conceptual and standalone machine-learning models in monthly hydrological
+prediction [4]. Although replication is not equivalent to a new theoretical contribution, it
+provides evidence that the hybrid framework is reproducible rather than accidental [4].
+Cheng et al. bring the Budyko framework directly into machine learning by using it as
+a runoff-partitioning constraint at global scale [10]. Their results show that runoff and
+baseflow estimation improve when learning is restricted to a physically plausible parti-
+tioning regime [10]. This is important because Budyko-based theory provides hydrological
+meaning without requiring a full mechanistic simulation of every process pathway [10].
+Liu et al. advance this argument further by estimating time-varying parameters in a
+9
+
+
+================================================================================
+PAGE 21 of 89
+================================================================================
+
+CHAPTER 2. LITERATURE REVIEW AND THEORETICAL FOUNDATIONS
+monthly Budyko function through data assimilation and machine learning [12]. Their
+findings indicate that runoff partitioning is not constant over time and that the drivers of
+this variation differ across regions [12]. For a climate-sensitive basin such as the Caspian,
+this suggests that any forecasting framework assuming fixed runoff-partitioning behavior
+under continued warming may be too rigid to remain reliable [12].
+2.7
+Methodological Comparison
+Across the source set, four broad methodological families can be identified. The first
+is climate-system modeling, represented by Samant and Prange [7]. This approach is
+strongest for long-horizon scenario analysis, regional forcing assessment, and understand-
+ing hydroclimatic tendencies under emission pathways [7]. Its main limitation is structural
+error: if lake geometry, surface area, or evaporation processes are poorly represented,
+physically misleading projections may result [7].
+The second family is observational machine learning based on satellite and gauge records,
+represented by Eftekhari et al. [3]. These models are often easier to implement, can
+perform well on limited datasets, and provide direct predictive value [3]. Their main
+limitations are weaker interpretability and possible fragility under nonstationarity, since
+they learn associations in the historical record without necessarily preserving hydrological
+logic [3].
+The third family is water-balance reconstruction and physically based hydrological
+simulation, represented by Saraceni et al. and Niedda et al. [8]. These methods are
+strongest when explanation matters, because precipitation, evaporation, runoff, and
+storage are kept explicitly linked [8]. Their main weakness lies in dependence on forcing-
+data quality and on the availability of observed level or discharge records for calibration
+[8].
+The fourth family is physics-informed or physics-guided machine learning, which is
+the most heterogeneous group [11]. Raissi et al. represent strict differential-equation
+residual PINNs [6]. Huang et al. represent domain-specific physical regularization inside
+a neural forecasting model [1]. Bhasme et al. represent conceptual hydrological guidance
+[9]. Cheng et al. represent theory-constrained learning through Budyko partitioning [10].
+This diversity should not be interpreted as inconsistency. Rather, it shows that physical
+knowledge can be embedded into learning at different depths depending on the reliability
+10
+
+
+================================================================================
+PAGE 22 of 89
+================================================================================
+
+CHAPTER 2. LITERATURE REVIEW AND THEORETICAL FOUNDATIONS
+and usability of the available physics for a given environmental system [11].
+2.7.1
+Mathematical Formulations
+The principal mathematical relations referenced in the literature are summarized below.
+Each expression is presented in LaTeX-ready form and linked to the corresponding study
+from the reviewed source set.
+Generic PINN Residual
+f(t, x) = ut + N[u; θ]
+(2.1)
+This expression represents the basic residual form used in classical physics-informed
+neural networks. The neural network predicts a state variable u, while the residual f(t, x)
+measures the extent to which the prediction violates the governing differential equation.
+The term ut denotes the time derivative of the state, and N[u; θ] denotes the differential
+operator parameterized by θ. When the residual is minimized, the prediction becomes
+more consistent with the governing law [6].
+Generic PINN Objective Function
+Ltotal = Ldata + λphysLphys + λbcLbc + λicLic
+(2.2)
+This is the general loss formulation commonly discussed in the PINN literature. Here, Ldata
+measures the mismatch between predictions and observations, Lphys penalizes violations
+of the physical law, Lbc represents the boundary-condition loss, and Lic represents the
+initial-condition loss. The weighting coefficients determine the relative contribution of
+each term during training [11].
+Closed-Basin Water Balance
+dS
+dt = P + Qin −E −Qout + G
+(2.3)
+This storage-balance equation represents the hydrological foundation of closed-lake and
+closed-sea systems. Here, S denotes water storage, P is precipitation over the water
+body, Qin is incoming runoff or river inflow, E is evaporation, Qout is surface outflow,
+and G denotes net groundwater exchange or other unresolved gains and losses. In a
+closed basin such as the Caspian Sea, Qout is generally negligible, so water-level change is
+11
+
+
+================================================================================
+PAGE 23 of 89
+================================================================================
+
+CHAPTER 2. LITERATURE REVIEW AND THEORETICAL FOUNDATIONS
+governed mainly by precipitation, inflow, evaporation, and subsurface or anthropogenic
+components [7].
+Storage-to-Level Conversion
+∆H ≈∆S
+A
+(2.4)
+This relation converts a change in water storage ∆S into a change in water level ∆H
+using surface area A. It is often used as a first-order approximation when area change is
+relatively small. Its limitation is that A may itself vary with water level, which becomes
+important under large long-term declines [7].
+Budyko-Type Evapotranspiration Partitioning
+ET
+P
+= 1 + ϕ −(1 + ϕω)1/ω ,
+ϕ = PET
+P
+(2.5)
+This is the Fu-type Budyko relation used in runoff-partitioning studies. In this formulation,
+ET is actual evapotranspiration, P is precipitation, PET is potential evapotranspiration,
+ϕ is the aridity index, and ω is a parameter summarizing catchment characteristics. The
+equation expresses how incoming water is partitioned between evapotranspiration and
+runoff under climatic and landscape controls [10].
+Hydrological Mass-Consistency Relation
+P = ET + Q + ∆S
+(2.6)
+This compact water-balance relation forms the conceptual basis of many hydrological
+hybrid models. Here, P denotes precipitation, ET denotes actual evapotranspiration, Q
+denotes runoff or streamflow, and ∆S denotes storage change. A model that predicts
+runoff and evapotranspiration without satisfying this relation may achieve numerical
+accuracy while remaining physically inconsistent [9].
+Ensemble Kalman Update for Time-Varying Budyko Parameters
+xa,t = xf,t + Kt (yt −Hxf,t)
+(2.7)
+This is the standard Ensemble Kalman Filter update used to estimate time-varying
+monthly Budyko parameters. Here, xf,t is the forecast state before assimilation, xa,t
+12
+
+
+================================================================================
+PAGE 24 of 89
+================================================================================
+
+CHAPTER 2. LITERATURE REVIEW AND THEORETICAL FOUNDATIONS
+is the updated state after assimilation, yt is the observation vector, H maps the state
+into observation space, and Kt is the Kalman gain. This formulation allows hydrological
+parameters to evolve through time rather than remain fixed [12].
+Geostrophic Balance for Sea-Surface-Height Forecasting
+ug = −g
+f
+∂ζ
+∂y,
+vg = g
+f
+∂ζ
+∂x
+(2.8)
+These equations represent the geostrophic velocity relations used in sea-surface-height
+forecasting. Here, ug and vg are the geostrophic velocity components, g is gravitational
+acceleration, f is the Coriolis parameter, and ζ is sea surface height. The equations link
+height gradients to physically meaningful flow structure and allow the prediction to be
+constrained through a diagnostic dynamic relation [1].
+Geostrophic-Informed Forecast Loss
+Ltotal = LSSH + λLgeo
+(2.9)
+This loss function combines a standard sea-surface-height prediction loss LSSH with an
+additional physics-based penalty Lgeo derived from geostrophic structure. The parameter
+λ controls the strength of the physical regularization. The literature shows that increasing
+λ excessively can reduce predictive performance when the real system is not perfectly
+geostrophic [1].
+MARS Prediction Function
+ˆy = β0 +
+X
+m
+βmhm(x)
+(2.10)
+This is the general form of a Multivariate Adaptive Regression Splines model. Here, ˆy
+is the predicted target, β0 is the intercept, βm are model coefficients, and hm(x) are
+basis functions constructed from piecewise linear hinge terms. This formulation explains
+why MARS can capture nonlinear relationships while remaining more interpretable than
+many deep-learning alternatives [3].
+13
+
+
+================================================================================
+PAGE 25 of 89
+================================================================================
+
+CHAPTER 2. LITERATURE REVIEW AND THEORETICAL FOUNDATIONS
+2.8
+Main Findings
+Several conclusions appear consistently across the reviewed studies. The first is that
+water-level change in a closed basin is mainly a problem of flux partitioning. Samant and
+Prange connect the long-term decline of the Caspian Sea to evaporation rising faster than
+precipitation [7]. Closed-lake and hydrological studies make a related point: over several
+years, variability depends on how precipitation is divided among evapotranspiration,
+runoff, and storage [5]. Budyko-based research gives this idea a more formal theoretical
+basis by showing that the central question is not only how much water enters a basin,
+but what happens to that water after it arrives [10].
+A second finding is that physical constraints are useful only when they match the
+dominant processes and are not imposed too strongly. Huang et al. demonstrate that
+geostrophic regularization can improve sea-surface-height forecasting, but they also show
+that overly strong constraints can reduce predictive performance [1]. Cuomo et al. discuss
+the same issue more generally, identifying loss balancing as a continuing challenge in
+PINN research [11]. This means that adding physics to a model is not automatically
+beneficial. The constraint must be relevant to the system, and its influence during training
+must be calibrated carefully [11].
+A third pattern is that sparse or imperfect data do not rule out scientific machine
+learning, although they do affect what kind of model can be trusted. Podina et al. show
+that operator discovery can still work with limited data when the model has some
+prior structure [2]. Saraceni et al. similarly show that short observational records can
+support hydrological reconstruction when they are combined with reanalysis forcing and
+a mass-balance framework [8]. For this thesis, the implication is that data scarcity should
+be treated as a design constraint, not as a reason to abandon physically guided modeling
+altogether [2].
+Finally, the literature suggests that hydrological parameters should not always be assumed
+constant. Liu et al. show that monthly Budyko partitioning parameters change over time
+as climatic and basin conditions shift [12]. For a rapidly changing system such as the
+Caspian Sea, this finding is especially important because it challenges the use of fixed
+rainfall–runoff–evapotranspiration relationships in long-term prediction [12].
+14
+
+
+================================================================================
+PAGE 26 of 89
+================================================================================
+
+CHAPTER 2. LITERATURE REVIEW AND THEORETICAL FOUNDATIONS
+2.9
+Research Gaps
+The most direct gap is the lack of a well-established physics-informed neural network
+designed specifically for the Caspian Sea. The reviewed literature includes climate
+projections, satellite-based prediction studies, water-balance reconstruction methods, and
+broader PINN or hydrological hybrid frameworks. However, these strands are usually
+treated separately, and no single model clearly brings them together for Caspian Sea
+level prediction [7].
+Another gap concerns the connection between scales. Existing studies range from global
+climate projections to local coastal prediction, basin hydrology, and general machine-
+learning theory [3]. What is still missing is a framework that links catchment runoff
+generation, basin water balance, and whole-sea level response while still remaining
+interpretable [9].
+Dynamic geometry is also underrepresented. Samant and Prange show that changes in lake
+surface area and bathymetry influence evaporation and therefore feed back into the water
+balance itself [7]. Many predictive approaches still rely on fixed-geometry assumptions or
+simplified storage-to-level conversion. These simplifications may be acceptable for small
+fluctuations, but they become more problematic when water-level change is large [7].
+There is also an unresolved problem of combining multiple data sources while keeping
+uncertainty explicit. Reanalysis products, satellite altimetry, gravimetry, discharge ob-
+servations, and gauge records each describe different parts of the Caspian system and
+each carries its own errors [8]. The literature provides relatively few examples of one
+framework that can integrate these sources while making uncertainty visible rather than
+hiding it inside the model [8].
+Constraint selection and weighting remain another important gap. The PINN review
+literature and the South China Sea forecasting study both show that physics-informed
+models depend strongly on how their losses are defined and balanced [11]. This difficulty
+is likely to be even greater in hydroclimatic systems, where physical relationships can
+vary by season, region, and hydrological state [1].
+Finally, many forecasting systems still assume hydrological relationships that are fixed
+or only weakly variable. The monthly Budyko study by Liu et al. suggests that runoff
+partitioning parameters can evolve over time [12]. In a drying closed basin exposed to
+15
+
+
+================================================================================
+PAGE 27 of 89
+================================================================================
+
+CHAPTER 2. LITERATURE REVIEW AND THEORETICAL FOUNDATIONS
+continued climate change, such fixed assumptions may be too restrictive for reliable
+long-term forecasting [12].
+2.10
+Synthesis
+Taken as a whole, the literature points toward a clear research direction. Caspian-specific
+studies show that the basin is already under strong hydroclimatic stress, so models need
+to address both long-term decline and shorter-term fluctuations [7]. Closed-lake and
+water-balance studies show that an interpretable model must keep precipitation, inflow,
+evaporation, and storage connected rather than treating them as unrelated predictors
+[8]. The core PINN literature explains how physical laws can be embedded directly
+into learning [6], while hydrological hybrid and Budyko-based studies show that useful
+physical guidance does not always require a fully specified differential-equation system
+[9].
+The strongest conclusion from the reviewed work is that a future Caspian forecasting
+framework should avoid both extremes: it should not be a purely black-box statistical
+model, but it also should not be an overly rigid process model. A more suitable approach
+would combine multi-source observations with constraints from closed-basin water balance,
+basin inflow partitioning, and evaporation dynamics. At the same time, the model should
+allow these relationships to change as climate and basin conditions change [12]. This
+unresolved space provides the main justification for the modeling approach developed in
+this thesis [7].
+16
+
+
+================================================================================
+PAGE 28 of 89
+================================================================================
+
+Chapter 3
+Methods
+3.1
+Research Design Overview
+This study follows a quantitative model-development and comparative evaluation design
+structured around two coupled tasks: (i) construction of a unified monthly hydroclimatic
+dataset for the Caspian Sea system and (ii) formulation and comparison of three physics-
+informed neural network (PINN) configurations for modeling monthly Caspian Sea level
+dynamics. The workflow is designed to preserve physical meaning during spatial and
+temporal aggregation, maintain consistency across heterogeneous data sources, and embed
+process-based constraints into model training.
+The methodological logic of the study is based on the view that reliable prediction of
+closed-basin water-level dynamics cannot rely only on unconstrained statistical fitting.
+Instead, model design should combine observation-based learning with hydrologically
+meaningful representations of precipitation, evaporation, inflow generation, energy bal-
+ance, and seasonal variability [6]. Accordingly, the dataset was assembled to support three
+complementary formulations: a lake water-balance PINN, a basin–lake coupled PINN
+constrained by Budyko partitioning, and an energy-aware evaporation PINN constrained
+through Penman–Monteith structure [9].
+17
+
+
+================================================================================
+PAGE 29 of 89
+================================================================================
+
+CHAPTER 3. METHODS
+3.2
+Data Sources and Variable Derivation
+3.2.1
+Source Structure
+The master dataset integrates variables from atmospheric reanalysis, land-surface reanal-
+ysis, hydrological products, satellite altimetry, and derived diagnostic terms. ERA5 and
+ERA5-Land provide the main atmospheric and energy-balance forcing variables [13] [14].
+GLDAS products provide basin-scale terrestrial hydrological variables, including snow-
+related storage indicators and runoff-related terms [15] [16]. Additionally, for improving
+accuracy of PINN2 model, which includes Budyko formula, Volga river discharge data
+was added [18]. DAHITI provides the primary supervisory target for monthly lake-level
+modeling [17]. In addition, several variables were derived analytically from the raw fields
+in order to support physically constrained model design.
+3.2.2
+ERA5 Lake-Scale Atmospheric Variables
+ERA5 daily statistics on single levels were collected for the Caspian Sea spatial domain
+and processed into monthly lake-scale predictors [13]. The selected lake variables include
+precipitation over the lake surface (Plake), lake evaporation (Elake), 2 m air temperature
+(T2mlake), 2 m dew point temperature (Td2mlake), 10 m zonal wind (U10lake), 10 m
+meridional wind (V 10lake), surface pressure (SPlake), and net radiation over the lake
+(Rnlake).
+The raw ERA5 lake-scale inputs were extracted from the Copernicus Climate Data Store
+using the cdsapi Python interface. The request domain was defined by the Caspian
+Sea lake bounding box, with northern, western, southern, and eastern limits of 47.5,
+45.5, 36.5, and 54.5 degrees, respectively. Data were requested for the 1993–2026 period
+on a month-by-month basis. To preserve the distinction between state variables and
+accumulated fluxes, two separate requests were made: one for daily mean fields, including 2
+m temperature, 2 m dew point temperature, 10 m zonal and meridional wind components,
+and surface pressure; and another for daily sum fields, including total precipitation,
+evaporation, surface net solar radiation, and surface net thermal radiation. All files
+were requested in NetCDF format and saved as monthly zipped NetCDF archives, with
+separate outputs for daily mean and daily sum variables. Existing monthly files were
+skipped during extraction to avoid duplicate downloads. This step produced the raw
+lake-scale ERA5 atmospheric inputs used later for preprocessing, monthly aggregation,
+variable derivation, and model training.
+18
+
+
+================================================================================
+PAGE 30 of 89
+================================================================================
+
+CHAPTER 3. METHODS
+Lake vapor pressure deficit was derived from air temperature and dew point temperature
+through saturation and actual vapor pressure relations. Relative humidity over the lake
+was then derived from the same pair of temperature variables. These terms were retained
+because they provide physically meaningful inputs for evaporation diagnostics and for
+the Penman–Monteith-based constraint structure in the energy-aware PINN.
+3.2.3
+ERA5-Land Basin-Scale Variables
+ERA5-Land daily statistics were processed over the terrestrial basin contributing to
+Caspian inflow using basin masking for spatial averaging [14]. The basin-scale variables
+include precipitation over the basin (Pbasin), basin temperature (T2mbasin), basin rel-
+ative humidity (RHbasin), basin net radiation (Rnbasin), potential evapotranspiration
+(Epotbasin), reference evapotranspiration (ET0basin), and soil moisture (SMbasin).
+Extraction process of ERA5-Land Basin-Scale Variables was the same as ERA5 Lake-Scale
+Atmospheric Variables.
+These variables serve two roles. First, they characterize basin-wide hydroclimatic forcing
+relevant to runoff generation and inflow interpretation. Second, they provide the forcing
+structure needed for Budyko-based and energy-based constraints in PINN-2 and PINN-3.
+The aridity index used in the Budyko-constrained formulation was computed as
+AIbudyko = Epotbasin
+Pbasin
+.
+(3.1)
+This variable is treated as a core diagnostic term in the basin–lake coupled PINN because
+it directly links climatic demand to available water supply [10].
+Additionally to extraction of main variables that were used in the process of model
+development, Land-Water Mask data was extracted from the same Copernicus Dataset.
+It will be used during preprocessing to prevent land-water data pollution.
+3.2.4
+GLDAS Hydrological Variables
+GLDAS Noah monthly products were used to represent basin-scale terrestrial hydrological
+conditions [15]. Where needed, GLDAS Noah Version 2.1 was also used for consistency
+checks and extension of overlapping temporal coverage [16]. The hydrological variables
+retained from these products include snow water equivalent (SWEbasin) and runoff-related
+inputs used to interpret terrestrial contributions to lake storage dynamics.
+19
+
+
+================================================================================
+PAGE 31 of 89
+================================================================================
+
+CHAPTER 3. METHODS
+A total runoff term can be represented conceptually as the sum of surface and baseflow
+components,
+Qtotal = Qsurface + Qbaseflow,
+(3.2)
+although the final model inputs emphasize inflow variables more directly linked to basin-
+to-lake transfer. Snow water equivalent was included because seasonal snow storage can
+influence delayed runoff generation and therefore affect inflow timing in the closed-basin
+system.
+3.2.5
+Observed and Proxy Inflow Variables
+Observed inflow was represented through Qin,obs using available hydrological runoff-related
+source data for the basin [15]. Because direct and continuous discharge information is
+limited for the full target period, a proxy inflow term was also constructed from basin-
+scale hydroclimatic variables. The proxy inflow variable was derived from the difference
+between basin precipitation input and evapotranspiration-related losses:
+Qin,proxy ≈Pbasin −ETbasin.
+(3.3)
+This proxy formulation is not treated as a direct substitute for measured discharge.
+Rather, it serves as a physically interpretable approximation of effective basin water
+surplus when continuous observed inflow is incomplete. This allows the model framework
+to preserve a runoff-generation logic even under observational limitations [9].
+The proxy inflow term should be interpreted as a simplified basin water-surplus indicator
+rather than as an independent measured discharge product. Conceptually, this term is
+related to runoff-partitioning logic because it represents the portion of basin precipitation
+that remains after evapotranspiration losses. For this reason, it partially overlaps with
+the hydrological idea developed more explicitly in the Budyko-constrained PINN-2
+formulation. In this thesis, however, the proxy term is used only as a coarse correction
+for unresolved non-Volga inflow and residual basin contributions, while PINN-2 treats
+runoff partitioning as the central physical constraint.
+3.2.6
+River Discharge Variables
+River discharge data were extracted from the Global Flood Awareness System (GloFAS)
+river-discharge and historical-data product specifically for the Volga River, which repre-
+sents the dominant riverine inflow pathway to the Caspian Sea [18]. The extracted Volga
+20
+
+
+================================================================================
+PAGE 32 of 89
+================================================================================
+
+CHAPTER 3. METHODS
+series was retained as an inflow-related variable for the basin–lake modeling framework,
+rather than as a general basin-wide discharge product. In the Budyko-constrained PINN,
+this variable provides an additional hydrological reference for comparing climate-derived
+basin water surplus with observed river-discharge behavior. It therefore supports future
+discharge assessment by linking runoff partitioning, Volga inflow variability, and Caspian
+Sea level response within one physically interpretable model structure.
+3.2.7
+Lake-Level Targets
+The primary supervisory target is the DAHITI lake-level time series, denoted
+lake_leveldahiti [17]. Because DAHITI observations are irregular in time, the series
+was aggregated to monthly resolution by grouping measurements by calendar month
+and computing monthly means. This step ensured temporal compatibility with monthly
+predictor variables while retaining the long-term variability of interest.
+Caspian Sea water level observations were obtained from the DAHITI water-level altimetry
+product (DAHITI ID 39). DAHITI derives inland water level time series from multi-
+mission satellite radar altimetry, using altimeter tracks crossing the water body. For the
+Caspian Sea product, the listed missions include TOPEX/Poseidon, Jason-1, Jason-2,
+Jason-3, and Sentinel-6A, all associated with pass 133.
+3.3
+Preprocessing and Quality Control
+Before integration, all source datasets were checked for timestamp consistency, duplicate
+entries, variable completeness, and unit compatibility. Variables originating from different
+products were converted into physically comparable metrics before being merged. This
+included unit conversion, separation of state and flux variables, and consistent treatment
+of accumulated quantities so that each column retained the correct hydrological or
+atmospheric meaning.
+The complete preprocessing workflow is summarized in Figure 3.1.
+21
+
+
+================================================================================
+PAGE 33 of 89
+================================================================================
+
+CHAPTER 3. METHODS
+Figure 3.1: Overall preprocessing and quality-control pipeline used to transform raw
+multi-source datasets into model-ready PINN inputs.
+Spatial preprocessing was performed before lake-scale averaging in order to reduce
+contamination between land and water grid cells. ERA5 lake variables were filtered using
+the land–water mask extracted for the Caspian region. In this mask, values close to 1
+represent complete land coverage, values close to 0 represent open water, and intermediate
+values indicate mixed shoreline, shallow-water, or partially resolved grid cells. Applying
+this mask helped prevent land-dominated grid cells from influencing lake atmospheric
+variables such as evaporation, precipitation, radiation, and near-surface meteorological
+conditions. For example, in Figure 3.2, where the spatial distribution of evaporation and
+2-metre dewpoint temperature is shown, it can be clearly seen that different regions of
+the Caspian Sea have different indicators. Without the gridding process, models cannot
+generalize effectively and lose spatial context during training.
+Figure 3.3 shows the result of the masking step used before spatial aggregation. The
+retained grid cells correspond mainly to the water-covered part of the Caspian Sea, while
+22
+
+
+================================================================================
+PAGE 34 of 89
+================================================================================
+
+CHAPTER 3. METHODS
+(a) Evaporation (e).
+(b) 2-metre dewpoint temperature (d2m).
+Figure 3.2: Spatial distribution of evaporation (e) and 2-metre dewpoint temperature
+(d2m) over the Caspian Sea region in July 2020.
+Figure 3.3: Caspian Sea ERA5 lake-scale grid after application of the land–water mask.
+23
+
+
+================================================================================
+PAGE 35 of 89
+================================================================================
+
+CHAPTER 3. METHODS
+land-dominated and mixed boundary cells are reduced or excluded to limit contamination
+from surrounding terrestrial surfaces.
+The gridded products were then organized on a 90 × 110 spatial grid. This grid size was
+selected as a compromise between spatial detail and computational practicality: it is fine
+enough to retain regional differences across the northern, central, and southern Caspian
+Sea, but not so fine that preprocessing becomes unnecessarily heavy for repeated model
+preparation. This step was important because hydroclimatic conditions vary substantially
+across the Caspian region and should not be collapsed too early into a single spatial
+average.
+After metric conversion, masking, and gridding, the ERA5, ERA5-Land, and GLDAS
+gridded data streams were aligned along common time coordinates and stored in unified
+NetCDF (.nc) structures. NetCDF was used because it is well suited for multidimensional
+geospatial data: it preserves time, latitude, longitude, variable names, units, and metadata
+in one structured file, making masking, gridding, and later feature extraction more
+convenient and reproducible than storing these fields as flat tables. DAHITI lake-level
+observations were kept in a separate dedicated CSV file, and Volga river-discharge data
+were also stored in a separate CSV file. These CSV-based observational streams were then
+time-aligned with the NetCDF predictors during feature construction and training-dataset
+assembly. Where incomplete or inconsistent values were identified in one source stream,
+only the affected stream was reprocessed and reintegrated, preserving reproducibility
+while avoiding unnecessary changes to already validated components.
+The final preprocessing output consisted of three similar but temporally different training-
+ready datasets. The first version was daily and preserved records for each available day.
+The second version used 10-day aggregation, where state variables were averaged and
+flux variables were summed over each 10-day period; this structure was created to align
+more closely with DAHITI observations, which provide lake-level values at approximately
+10-day intervals presented in the Figure 3.4. The third version was monthly, with state
+variables represented by monthly averages and flux variables by monthly sums. These
+parallel datasets were prepared so that model performance could be compared across daily,
+10-day, and monthly temporal resolutions, after which the best-performing resolution
+could be selected for the final PINN training experiments.
+24
+
+
+================================================================================
+PAGE 36 of 89
+================================================================================
+
+CHAPTER 3. METHODS
+Figure 3.4: Dahiti dataset of Caspian Sea Water Level Dynamics between 1993 and 2026
+3.4
+Final Dataset Design
+The final dataset was designed as a model-ready structure that combines hydrological,
+meteorological, river-forcing, and satellite-altimetry information for Caspian Sea level
+modeling. For the main monthly experiments, the data were divided chronologically
+rather than randomly, because water-level prediction is a time-series problem and future
+observations must not be used to train earlier predictions. The train–validation–test
+split was defined as follows: training covers January 1993–December 2014, corresponding
+to 22 years and 67% of the dataset; validation covers January 2015–December 2017,
+corresponding to 3 years and 9%; and testing covers January 2018–February 2026,
+corresponding to 8 years and 24%, as summarized in Table 3.1. The core predictor data
+are stored as merged NetCDF files covering the Caspian Sea and surrounding basin from
+1993 to 2026. This format was retained for the gridded variables because it preserves both
+spatial and temporal dimensions, which is necessary for representing regional differences
+across the northern, central, and southern parts of the Caspian Sea and its drainage
+basin.
+Table 3.1: Chronological data split used for the monthly PINN experiments.
+Split
+Period
+Length
+Share
+Training
+Jan 1993–Dec 2014
+22 years
+67%
+Validation
+Jan 2015–Dec 2017
+3 years
+9%
+Testing
+Jan 2018–Feb 2026
+8 years
+24%
+Although this chronological split is appropriate for time-series modelling because it
+25
+
+
+================================================================================
+PAGE 37 of 89
+================================================================================
+
+CHAPTER 3. METHODS
+avoids temporal leakage, it also creates a physically asymmetric evaluation setting. The
+training period mainly represents earlier and comparatively more stable Caspian Sea level
+dynamics, whereas the test period from 2018 to 2026 corresponds to a stronger declining
+regime. As a result, the test set should be interpreted not as a randomly sampled held-out
+subset, but as an out-of-regime evaluation period with a distribution shift in the target
+variable. This makes the evaluation more realistic for future-oriented modelling, but it
+also requires caution when interpreting high reconstruction scores, especially for absolute
+water-level trajectories.
+The main gridded predictors included in the final NetCDF datasets are summarized
+compactly in Table 3.2.
+Table 3.2: Core gridded predictor variables in the final datasets.
+Variable group
+Included variables
+Atmospheric forcing
+Total precipitation, evaporation, 2-metre air temperature,
+2-metre dewpoint temperature, surface pressure
+Energy and wind terms
+Surface net solar radiation, surface net thermal radiation,
+10-metre zonal and meridional wind components
+Hydrological
+state
+and
+runoff
+Surface runoff, sub-surface runoff, snow water equivalent
+Spatial mask
+Land–sea mask
+These variables were not reduced immediately to a single basin average because local
+hydroclimatic conditions can differ across the study region. Preserving the common
+spatial grid allows the model input to retain information about where forcing conditions
+occur, rather than only when they occur.
+Three NetCDF versions were prepared with the same spatial dimensions but different
+temporal resolutions. The monthly dataset, merged_grid_dataset_monthly.nc, has
+dimensions (396, 110, 90); the 10-day dataset, merged_grid_dataset_10day.nc, has
+dimensions (1193, 110, 90); and the daily dataset, merged_grid_dataset_daily.nc, has
+dimensions
+(12103, 110, 90). In these shapes, the first value corresponds to the number of time
+steps, while the last two values represent the shared spatial grid. Monthly data support
+analysis of long-term variability and slower hydrological trends. The 10-day version
+was created to better match the sampling pattern of satellite altimetry and to retain
+seasonal-scale variation. The daily version keeps the highest temporal detail and enables
+26
+
+
+================================================================================
+PAGE 38 of 89
+================================================================================
+
+CHAPTER 3. METHODS
+higher-frequency experiments, although it also requires stronger smoothing of noisy target
+signals.
+The non-gridded forcing and target variables are summarized in Table 3.3. Volga discharge
+was retained because the Volga is the dominant inflow source to the Caspian Sea, while
+the altimetry-based water-level variables define the supervised learning target.
+Table 3.3: River forcing and water-level target variables.
+Variable
+Unit / meaning
+Use in dataset
+volga_q
+m3 s−1
+Volga River discharge; converted when
+needed into an equivalent lake-level
+contribution for the water-balance
+equation
+water_level
+Absolute level
+Satellite-altimetry target representing
+Caspian Sea water level
+delta_water_level
+Level change
+Difference between consecutive times-
+tamps; main target form for PINN
+training
+The change-based target is especially relevant for the PINN formulations because the
+models are trained to estimate water-level variation rather than only reproduce absolute
+level values.
+3.5
+PINN Model Formulations
+Across all three formulations, the neural architecture is designed to predict monthly
+lake-level dynamics while physical constraints regulate the plausibility of intermediate
+hydrological relationships. The three PINNs differ in the type of process knowledge
+embedded into the learning problem.
+To clarify the role of each formulation, Table 3.4 summarizes the main physical idea, the
+target process, and the principal limitation of each PINN design. The three models are
+not intended to represent completely independent physical mechanisms. Instead, they test
+different levels of physical explicitness within the same closed-basin modelling problem.
+27
+
+
+================================================================================
+PAGE 39 of 89
+================================================================================
+
+CHAPTER 3. METHODS
+Table 3.4: Conceptual comparison of the three PINN formulations.
+Model
+Main physical idea
+What the constraint rep-
+resents
+Main limitation
+PINN-1
+Direct lake water bal-
+ance
+Lake precipitation, lake
+evaporation,
+Volga
+dis-
+charge,
+and
+residual
+basin surplus expressed
+as equivalent water-level
+change
+Uses simplified resid-
+ual basin surplus and
+constant
+reference
+lake area
+PINN-2
+Budyko runoff partition-
+ing
+Basin precipitation is par-
+titioned into evapotranspi-
+ration and runoff before
+contributing to lake-level
+change
+Shares some hydro-
+logical intuition with
+PINN-1 and was also
+used
+for
+temporal-
+resolution screening
+PINN-3
+Evaporation and energy-
+balance constraint
+Lake-level
+change
+is
+constrained
+through
+evaporation-related
+atmospheric and energy-
+balance behaviour
+Improves
+pattern-
+level
+agreement
+but does not mini-
+mize RMSE in the
+monthly comparison
+3.5.1
+PINN-1: Water Balance / Mass Conservation Model
+PINN-1 is the first physics-informed model in the study and is based on the lake water-
+balance principle. Instead of treating Caspian Sea level change as a purely statistical
+sequence, the model constrains the predicted change in water level using the main hydro-
+logical gains and losses of the system. The physical estimate combines lake precipitation,
+lake evaporation, Volga River inflow, and residual runoff from the wider basin.
+The water-balance estimate is written as
+∆hphys = (Plake −αEElake) + βvolga
+Qvolga∆t
+Alake
++ γother max (0, Pbasin −PETbasin) , (3.4)
+where Plake and Elake are precipitation and evaporation over the lake surface. The
+coefficient αE is a learnable evaporation correction factor. The variable Qvolga represents
+Volga River discharge, ∆t is the monthly time-conversion factor, and Alake is the lake
+surface area used to express river discharge as an equivalent water-level contribution. In
+this formulation, Alake is treated as a constant reference surface area. This assumption is
+used as a first-order approximation to keep the discharge-to-level conversion consistent
+across all monthly time steps. However, for the Caspian Sea this is a simplification
+because the lake surface area changes with water level, especially in the shallow northern
+28
+
+
+================================================================================
+PAGE 40 of 89
+================================================================================
+
+CHAPTER 3. METHODS
+part of the basin. Therefore, the constant-area conversion should be interpreted as an
+approximate scaling of river inflow into water-level units rather than as a fully dynamic
+storage–elevation relationship.
+The parameter βvolga scales the effective part of Volga discharge that contributes to open-
+lake level change. The final term approximates residual runoff from other basin sources,
+where Pbasin is basin precipitation, PETbasin is basin potential evapotranspiration, and
+γother is a learnable scaling factor.
+This residual basin-surplus component makes PINN-1 not fully independent from the
+runoff-partitioning logic used in PINN-2. The difference is in the role and complexity of
+the term. In PINN-1, γother max(0, Pbasin−PETbasin) is used as a simple correction inside a
+broader lake water-balance equation dominated by direct lake precipitation, evaporation,
+and Volga discharge. In PINN-2, runoff generation is the main physical mechanism
+and is represented through an explicit Budyko-type relationship with a time-varying
+partitioning parameter. Therefore, PINN-1 should be interpreted as a water-balance
+model with a simplified residual basin-surplus correction, rather than as a fully separate
+runoff-partitioning model.
+Before the physics loss is computed, all terms are expressed in metres per month. This
+common unit is needed because the inputs come from different data products and physical
+units. Lake precipitation and evaporation are already treated as depth fluxes, while Volga
+discharge is converted from volume per time into lake-level depth using ∆t/Alake. The
+residual runoff term is also interpreted as an equivalent depth contribution. The operator
+max(0, Pbasin −PETbasin) prevents water deficit in dry periods from being treated as
+negative runoff entering the sea.
+The neural network predicts water-level change, denoted ∆hpred. The physics-consistency
+term is defined as the mean squared error between this prediction and the water-balance
+estimate:
+Lphys = MSE (∆hpred, ∆hphys) .
+(3.5)
+The full objective combines the observational loss with this physical constraint:
+Ltotal = Ldata + λphysLphys,
+(3.6)
+where Ldata measures the mismatch between predicted and observed water-level change,
+and λphys controls the weight of the physics term. Thus, PINN-1 uses the same general
+29
+
+
+================================================================================
+PAGE 41 of 89
+================================================================================
+
+CHAPTER 3. METHODS
+training pipeline as the other PINN variants, but its defining feature is the mass-
+conservation constraint.
+The effect of this assumption can be expressed analytically. If the true lake area is
+Atrue = Alake + δA, then the inflow-related level contribution is inversely proportional to
+area:
+∆hQ = Qvolga∆t
+A
+.
+For small relative area errors, the relative error in this converted level term is approxi-
+mately
+δ(∆hQ)
+∆hQ
+≈−δA
+Alake
+.
+Thus, a positive area bias reduces the estimated level contribution of river inflow, while a
+negative area bias increases it. This sensitivity mainly affects the physical residual term
+in PINN-1 and the interpretation of discharge-driven storage change.
+The learnable correction parameters are included to account for uncertainty in the forcing
+terms without removing their physical meaning. ERA5 evaporation may contain regional
+bias over the Caspian Sea, so αE adjusts the evaporation loss. The Volga term is scaled
+because part of the discharge may be delayed or redistributed in the delta before affecting
+open-sea level. The residual basin coefficient γother represents uncertain contributions
+from other rivers, groundwater exchange, and unresolved runoff processes. In this form,
+PINN-1 provides a compact water-balance baseline for physically constrained lake-level
+modeling.
+3.5.2
+PINN-2: Budyko-Constrained Model
+PINN-2 represents basin-scale water partitioning using the Budyko hypothesis. In contrast
+to PINN-1, which applies a direct lake mass-balance constraint, this model focuses on
+how precipitation over the Caspian basin is divided between evapotranspiration and
+runoff before contributing to lake-level change. The formulation is included to test a
+catchment-process constraint under changing hydroclimatic conditions.
+The aridity index and Budyko evapotranspiration estimate are defined as
+ϕt = PETbasin,t
+Pbasin,t
+,
+(3.7)
+ETbudyko,t =
+"
+ϕt
+(1 + ϕnt
+t )1/nt
+#
+Pbasin,t,
+(3.8)
+30
+
+
+================================================================================
+PAGE 42 of 89
+================================================================================
+
+CHAPTER 3. METHODS
+where Pbasin,t is basin precipitation, PETbasin,t is basin potential evapotranspiration,
+and nt is a time-varying Budyko shape parameter predicted by the model. The aridity
+index is bounded during training because very small precipitation values can make
+PETbasin/Pbasin numerically unstable.
+The physical water-level-change estimate is then constructed from basin runoff and direct
+lake-surface forcing:
+runoff_contribt = (Pbasin,t −ETbudyko,t) scalet,
+(3.9)
+lake_contribt = Plake,t −Elake,t,
+(3.10)
+∆hphys,t = runoff_contribt + lake_contribt.
+(3.11)
+Here, scalet is a dynamic runoff-to-lake routing coefficient, while Plake,t and Elake,t are
+precipitation and evaporation over the lake surface. All physical terms are expressed
+in metres per month, allowing direct comparison with the predicted water-level change.
+Treating both nt and scalet as time-varying allows the constraint to reflect seasonal shifts
+in snow conditions, soil moisture, vegetation state, and aridity.
+The Budyko physics loss is defined as
+Lphys = MSE (∆hpred, ∆hphys) ,
+(3.12)
+and the total objective combines this term with the data-driven prediction loss:
+Ltotal = Ldata + λphysLphys.
+(3.13)
+Volga discharge may be available as an input feature, but it is not added separately
+inside the Budyko physics equation because the runoff term already represents catchment-
+generated water contribution. This avoids double counting and keeps PINN-2 focused on
+basin water partitioning rather than explicit river-discharge mass balance.
+3.5.3
+PINN-3: Penman / Priestley–Taylor Energy-Balance
+Constraint
+PINN-3 is designed to represent the evaporation component of Caspian Sea level change
+more explicitly than the previous two formulations. In PINN-1, lake evaporation enters the
+water-balance equation as a corrected forcing variable, while in PINN-2 the main physical
+emphasis is runoff partitioning over the drainage basin. PINN-3 instead constrains the
+31
+
+
+================================================================================
+PAGE 43 of 89
+================================================================================
+
+CHAPTER 3. METHODS
+evaporation loss through a Priestley–Taylor energy-balance formulation, which links
+open-water evaporation to both available radiative energy and atmospheric drying power.
+The meteorological inputs used for this constraint are derived from the gridded ERA5
+forcing fields. Near-surface temperature and dew-point temperature are used to estimate
+saturation and actual vapour pressure, wind components are converted into wind-speed
+magnitude, and surface pressure is used to estimate the psychrometric constant. The
+vapour-pressure terms are computed as
+es(Tt) = 0.6108 exp
+ 17.27 Tt
+Tt + 237.3
+
+,
+(3.14)
+ea(Td,t) = 0.6108 exp
+ 17.27 Td,t
+Td,t + 237.3
+
+,
+(3.15)
+VPDt = max
+ 0, es(Tt) −ea(Td,t)
+
+,
+(3.16)
+where Tt and Td,t are 2-metre air temperature and dew-point temperature in ◦C, es is
+saturation vapour pressure, ea is actual vapour pressure, and VPDt is vapour-pressure
+deficit (clamped at zero to remain physical). The slope of the saturation vapour-pressure
+curve is
+∆t =
+4098 es(Tt)
+(Tt + 237.3)2.
+(3.17)
+The psychrometric constant uses the FAO-56 simplified form, in which the atmospheric
+constants cp, ε, and λv are pre-combined into the linear coefficient 0.665 × 10−3:
+γt = 0.665 × 10−3 Pt,
+(3.18)
+where Pt is surface pressure in kPa. The equivalent full physical form γt = cpPt/(ελv),
+with cp the specific heat of moist air, ε ≈0.622 the ratio of molecular weights of water
+vapour to dry air, and λv the latent heat of vapourisation, reduces to the simplified
+relation above under standard atmospheric conditions.
+The Priestley–Taylor diagnostic evaporation term combines a radiative component and
+an aerodynamic component, each scaled by a separate learnable coefficient:
+E phys
+lake,t = αPT,t
+∆t
+∆t + γt
+R eq
+n,t
+|
+{z
+}
+Radiation term
++ Cwind,t
+γt
+∆t + γt
+f(Ut) VPDt
+|
+{z
+}
+Aerodynamic term
+,
+(3.19)
+The wind function is f(Ut) = 1 + 0.536 Ut, where Ut is computed from u10 and v10, and
+R eq
+n,t is net radiation converted to water-equivalent depth using λvρw ≈2.5 × 109 J m−3.
+32
+
+
+================================================================================
+PAGE 44 of 89
+================================================================================
+
+CHAPTER 3. METHODS
+In equation (3.19), αPT,t is a time-varying Priestley–Taylor coefficient constrained to
+αPT,t ≥1.0, while Cwind,t is a positive aerodynamic transfer scale; both are predicted at
+each time step so the radiation and wind-driven components can adjust independently to
+seasonal changes in energy balance, humidity, lake fetch, and atmospheric conditions.
+The lower bound αPT,t ≥1.0 is imposed because open-water evaporation at the lake
+surface is not strongly moisture-limited, and the classical Priestley–Taylor reference
+coefficient for free-water surfaces is commonly taken to be approximately 1.26. The
+softplus parameterization αPT,t = 1.0 + softplus(·) ensures that the learned radiative
+term does not fall below the equilibrium evaporation regime during training.
+The physically constrained water-level estimate for PINN-3 is then written as
+∆hphys,t =
+ Plake,t −E phys
+lake,t
+
++ γrunoff,t max
+ 0, Pbasin,t −PETbasin,t
+
+,
+(3.20)
+where Plake,t is precipitation over the lake surface, Pbasin,t and PETbasin,t are basin
+precipitation and basin potential evapotranspiration respectively, and γrunoff,t is a positive
+learnable scaling factor representing the fraction of basin water surplus that ultimately
+reaches the lake. The max(0, ·) operator ensures that basin water deficit in dry periods
+is not interpreted as a non-physical negative runoff contribution. Volga River discharge
+is provided to the model as an additional input feature but is not added explicitly
+inside equation (3.20) — the Volga signal is learned through the temporal CNN–LSTM
+backbone, which avoids double-counting against the basin-scale water-surplus term.
+The corresponding physics-consistency loss is the mean squared error between the
+network’s predicted water-level change and the energy-balance estimate:
+Lphys = MSE
+ ∆hpred,t, ∆hphys,t
+
+,
+(3.21)
+and the total training objective remains
+Ltotal = Ldata + λphys Lphys,
+(3.22)
+with λphys = 1.0, identical to PINN-2, so any difference in predictive behaviour between
+PINN-2 and PINN-3 can be attributed to the closure law rather than to the training-loss
+balance.
+The purpose of this formulation is to penalise water-level predictions that can only be
+achieved through unrealistic evaporation behaviour. PINN-3 is therefore expected to
+33
+
+
+================================================================================
+PAGE 45 of 89
+================================================================================
+
+CHAPTER 3. METHODS
+provide additional physical structure under warming conditions, where evaporation is a
+dominant driver of long-term Caspian Sea level decline and where unconstrained models
+may extrapolate poorly outside the historical range.
+3.6
+Training and Comparative Evaluation Design
+All three PINNs share the same monthly target variable and common data foundation.
+The dataset is divided chronologically into training, validation, and testing subsets in
+order to preserve temporal causality and avoid information leakage across periods. This
+chronological design is especially important for hydroclimatic forecasting because future
+states should not influence parameter learning from earlier periods.
+Comparative evaluation is designed to examine three dimensions of model behavior:
+predictive accuracy, physical consistency, and interpretability. Predictive performance
+will be assessed using standard regression metrics such as root mean squared error
+(RMSE), correlation, and coefficient of determination (R2). Temporal plots of observed
+and predicted lake-level trajectories will also be used to assess the ability of each
+formulation to reconstruct seasonal and multi-year variability.
+Physical consistency will be evaluated by examining the extent to which each model
+respects its imposed hydrological or energy-based constraint during prediction. For
+PINN-1, the primary issue is balance consistency between storage change and the flux
+terms. For PINN-2, the focus is whether runoff generation remains compatible with
+Budyko partitioning under changing climatic conditions. For PINN-3, the key issue is
+whether evaporation behavior remains physically plausible when constrained through
+energy-balance logic. This comparative design is intended to determine not only which
+model predicts best numerically, but also which formulation remains most physically
+credible under incomplete and heterogeneous observations [11].
+The evaluation design followed a two-stage structure. First, PINN-2 was used as a
+reference screening model to compare daily, 10-day, and monthly temporal resolutions
+because its Budyko-based formulation directly represents basin-scale runoff partitioning
+and was therefore suitable for testing temporal aggregation effects. After the unsuitable
+daily resolution was excluded, the 10-day and monthly resolutions were retained for
+cross-model comparison. The PINN-2 results reported in the final comparison are the
+same reference-formulation results used during this screening stage. Therefore, PINN-2
+34
+
+
+================================================================================
+PAGE 46 of 89
+================================================================================
+
+CHAPTER 3. METHODS
+should not be interpreted as an independent post-selection baseline, but as the Budyko-
+constrained reference formulation retained for continuity across the experimental design.
+Consequently, the ranking of PINN-1, PINN-2, and PINN-3 should be interpreted as a
+comparison of physical formulations under the selected temporal resolutions, not as a
+fully independent post-selection validation experiment.
+To isolate the contribution of the physics-informed loss term, an additional ablation
+baseline was trained using the same CNN–LSTM architecture, the same look-back window,
+and the same chronological train/validation/test split as the monthly PINN experiments.
+In this baseline, the physical residual term was removed from the objective function by
+setting λphys = 0. This experiment makes it possible to separate the effect of the neural
+architecture itself from the effect of physics-informed regularization.
+To assess the stability of the best-performing physics-informed formulation, PINN-3 was
+additionally retrained with five independent random seeds: 42, 123, 2024, 7, and 999.
+The model architecture, input variables, temporal split, loss structure, and λphys = 1.0
+were kept unchanged. Only the stochastic components of training, including weight
+initialization, data-loader order, and dropout masks, varied between runs. This experiment
+was used to evaluate whether the reported PINN-3 metrics were representative of the
+formulation or strongly dependent on a single random initialization.
+3.7
+Methodological Limitations
+Several limitations are recognized in advance. First, basin inflow representation relies
+partly on proxy hydrological terms where continuous direct observations are incomplete.
+Second, physically constrained loss design requires careful weighting in order to balance
+data fit and process consistency, and poor weighting may reduce rather than improve
+predictive performance [1]. Third, uncertainties in reanalysis-derived and model-derived
+forcing variables may propagate into both the learned relationships and the interpretation
+of physical consistency.
+A further methodological limitation concerns the regime asymmetry of the chronological
+train/validation/test split. Since the test period contains a pronounced declining trend in
+Caspian Sea level, the target distribution differs from much of the training period. This
+distribution shift may affect the interpretation of model performance: high agreement
+in reconstructed absolute water level can partly reflect the model’s ability to follow the
+35
+
+
+================================================================================
+PAGE 47 of 89
+================================================================================
+
+CHAPTER 3. METHODS
+dominant downward trend, rather than fully demonstrate robust process-level forecasting
+skill across all hydroclimatic regimes. For this reason, the results should be interpreted
+together with the monthly ∆H metrics, the no-physics CNN–LSTM ablation baseline,
+and the physical consistency discussion.
+Another limitation is the use of a constant reference lake surface area Alake in the
+storage-to-level conversion. This simplification is common for first-order closed-basin
+water-balance modelling, but it is not fully realistic for the Caspian Sea because a
+declining water level changes the exposed shoreline area and modifies the relationship
+between storage change and level change. The effect is expected to be especially important
+in the shallow northern Caspian, where small vertical changes can produce relatively
+large horizontal shoreline shifts. As a result, the converted inflow contribution and
+evaporation-related area effects may contain scaling uncertainty.
+A first-order estimate of this limitation can be obtained from the sensitivity relation
+δ(∆hQ)
+∆hQ
+≈−δA
+Alake
+.
+In this thesis, the reference Caspian Sea surface area used for discharge-to-level conversion
+is approximately Alake ≈371,000 km2. Because the northern Caspian is shallow, a multi-
+decadal water-level decline can expose a non-negligible part of the nearshore shelf.
+Therefore, even a surface-area change of only a few percent would produce a similar
+relative scaling error in the converted inflow contribution Qvolga∆t/Alake. For example,
+if the effective surface area were reduced by about 5%, the inflow-to-level contribution
+would be underestimated by approximately the same order of magnitude when a constant
+reference area is used.
+This error is asymmetric in sign: when the true lake area decreases, a constant Alake
+makes the same Volga discharge appear as a smaller water-level contribution than it
+would under a dynamic area formulation. Since this scaling enters the physical residual
+rather than the supervised data loss, it mainly affects the magnitude and calibration of
+the physics-informed loss. It can therefore make exact agreement between the predicted
+∆H and the physically estimated ∆H more difficult, without directly biasing the data-
+fitting component of the neural network. A full dynamic A(H) or bathymetry-based
+storage–elevation formulation is left for future work.
+A further conceptual limitation is that the three PINN formulations are not perfectly
+orthogonal. In particular, PINN-1 includes a simplified basin-surplus term based on
+36
+
+
+================================================================================
+PAGE 48 of 89
+================================================================================
+
+CHAPTER 3. METHODS
+Pbasin −PETbasin, while the proxy inflow discussion uses the related surplus logic Pbasin −
+ETbasin. This means that PINN-1 and PINN-2 partially share the same hydrological
+intuition: precipitation remaining after evapotranspiration can contribute to basin runoff
+and ultimately to lake-level change. The comparison should therefore be interpreted as a
+comparison between different levels of physical explicitness, rather than as a comparison
+of completely independent physical mechanisms.
+Another methodological limitation concerns the dual role of PINN-2 in the experimental
+design. PINN-2 was used first as a reference model for temporal-resolution screening and
+then retained as the Budyko-constrained reference formulation in the final comparison.
+Since the same PINN-2 metrics are used in both places, they should not be interpreted
+as independent post-selection validation evidence. The comparison remains useful for
+assessing the relative behaviour of the tested physical formulations, but future work should
+repeat the comparison after fixing temporal resolution and retraining all models under
+identical post-selection conditions, ideally with repeated random seeds or walk-forward
+validation.
+This error is asymmetric in sign: when the true lake area decreases, a constant Alake
+makes the same Volga discharge appear as a smaller water-level contribution than it
+would under a dynamic area formulation. Since this scaling enters the physical residual
+rather than the supervised data loss, it mainly affects the magnitude and calibration of
+the physics-informed loss. It can therefore make exact agreement between the predicted
+∆H and the physically estimated ∆H more difficult, without directly biasing the data-
+fitting component of the neural network. A full dynamic A(H) or bathymetry-based
+storage–elevation formulation is left for future work.
+A further conceptual limitation is that the three PINN formulations are not perfectly
+orthogonal. In particular, PINN-1 includes a simplified basin-surplus term based on
+Pbasin −PETbasin, while the proxy inflow discussion uses the related surplus logic Pbasin −
+ETbasin. This means that PINN-1 and PINN-2 partially share the same hydrological
+intuition: precipitation remaining after evapotranspiration can contribute to basin runoff
+and ultimately to lake-level change. The comparison should therefore be interpreted as a
+comparison between different levels of physical explicitness, rather than as a comparison
+of completely independent physical mechanisms.
+Another methodological limitation concerns the dual role of PINN-2 in the experimental
+design. PINN-2 was used first as a reference model for temporal-resolution screening and
+37
+
+
+================================================================================
+PAGE 49 of 89
+================================================================================
+
+CHAPTER 3. METHODS
+then retained as the Budyko-constrained reference formulation in the final comparison.
+Since the same PINN-2 metrics are used in both places, they should not be interpreted
+as independent post-selection validation evidence. The comparison remains useful for
+assessing the relative behaviour of the tested physical formulations, but future work should
+repeat the comparison after fixing temporal resolution and retraining all models under
+identical post-selection conditions, ideally with repeated random seeds or walk-forward
+validation.
+38
+
+
+================================================================================
+PAGE 50 of 89
+================================================================================
+
+Chapter 4
+Results and Discussion
+4.1
+Experimental Setup
+To evaluate the proposed physics-informed models, three temporal versions of the final
+dataset were prepared: monthly, decadal (10-day), and daily. Before training all three
+PINN variants, temporal resolution was first tested using PINN-2 as the reference model,
+because the Budyko-based constraint is more sensitive to temporal aggregation and
+can indicate whether the dataset preserves meaningful hydrological structure. This step
+was used to determine which temporal resolutions were suitable for the final model
+comparison.
+After the temporal resolution selection, PINN-1, PINN-2, and PINN-3 were trained
+separately on the selected datasets. The models were compared using the same evaluation
+procedure, including prediction errors for water-level change and reconstruction accuracy
+of the water-level trajectory. This setup allowed the comparison to reflect differences
+in physical constraints and temporal resolution rather than changes in the evaluation
+procedure.
+4.2
+Overview of PINN Models
+All PINN configurations use the same spatio-temporal CNN–LSTM backbone. The
+input is represented as a sequence of gridded hydrometeorological variables, where
+each time step contains spatial fields describing lake and basin conditions. The CNN
+block processes every time step separately and extracts compact spatial features from
+39
+
+
+================================================================================
+PAGE 51 of 89
+================================================================================
+
+CHAPTER 4. RESULTS AND DISCUSSION
+variables such as precipitation, evaporation, runoff, snow-related indicators, atmospheric
+variables, and river discharge. These CNN-derived feature vectors are then passed to the
+LSTM, which captures temporal dependence across the selected look-back window and
+represents delayed hydrological responses in the Caspian Sea system. The final recurrent
+representation is used to predict the water level change, c
+∆h, while the physics-informed
+part of the model adds an additional loss term that constrains the prediction toward
+a physically meaningful water-balance relationship. Therefore, the shared structure of
+the PINN models combines spatial feature extraction, temporal sequence modelling, and
+physical regularization within one training framework.
+4.2.1
+PINN-1 Architecture and Experimental Setup
+In this setup, the model does not only learn the statistical relationship between input
+variables and observed water-level change. It also compares its predicted ∆H with a
+physically estimated water-level change derived from lake precipitation, lake evaporation,
+Volga discharge, and residual basin runoff.
+The implemented PINN-1 architecture is shown in Figure 4.1. The model receives a
+sequence of gridded input tensors with 13 atmospheric and hydrological channels over a
+110 × 90 spatial grid. Before temporal modelling, the input sequence is reshaped so that
+each time step can be passed through the convolutional feature extractor. The spatial
+encoder consists of two convolutional blocks. The first convolutional layer maps the 13
+input channels into 32 feature maps, followed by a ReLU activation and max-pooling
+operation. The second convolutional layer increases the feature depth from 32 to 64
+channels. After this, adaptive average pooling reduces the spatial representation to a
+fixed 4 × 4 feature map, which produces 1024 spatial features for each time step.
+40
+
+
+================================================================================
+PAGE 52 of 89
+================================================================================
+
+CHAPTER 4. RESULTS AND DISCUSSION
+Figure 4.1: Implemented CNN–LSTM architecture of PINN-1 water-balance model.
+The extracted spatial features are then passed into an LSTM layer, which processes
+the temporal sequence and represents how the hydrometeorological conditions evolve
+over time. This is necessary because Caspian Sea level change is not controlled only
+by the current state of the atmosphere or basin, but also by previous precipitation,
+evaporation, runoff, and discharge conditions. The final hidden representation from the
+LSTM is passed through a fully connected regression block with dropout regularization.
+The output layer produces six values, including the predicted water-level change and the
+physics-related parameters used in the water-balance constraint.
+During training, the model minimizes both the data loss between predicted and observed
+∆H and the physics loss between ∆Hpred and ∆Hphys. Adaptive loss weighting is used
+so that the model can balance observational fitting and physical consistency during
+optimization. In addition, the predicted absolute water-level trajectory is reconstructed
+by cumulatively summing the predicted ∆H values from the initial observed level. This
+41
+
+
+================================================================================
+PAGE 53 of 89
+================================================================================
+
+CHAPTER 4. RESULTS AND DISCUSSION
+allows the evaluation to consider not only short-term prediction error, but also whether
+the model produces a stable long-term water-level reconstruction.
+4.2.2
+PINN-2 (Budyko-Constrained Model) Setup
+For PINN-2, the shared CNN–LSTM structure is implemented with an input tensor
+of shape (1, 6, 13, 110, 90), where the six time steps form the look-back window, the
+13 channels represent gridded meteorological and hydrological variables, and 110 × 90
+is the spatial resolution. The channels include precipitation, temperature, radiation,
+pressure, evaporation, dewpoint temperature, wind components, runoff variables, snow
+water equivalent, and Volga discharge. Before training, all variables are temporally aligned
+to the selected resolution and normalized using statistics from the training split.
+The six temporal slices are first reshaped so that each time step is passed through the
+same CNN encoder. The encoder maps the 13 input channels to 32 feature maps using
+a two-dimensional convolution, applies SiLU activation, and reduces the spatial size
+from 110 × 90 to 55 × 45 through max pooling. A second convolution increases the
+feature depth from 32 to 64 channels, followed by another SiLU activation and adaptive
+average pooling to a fixed 4 × 4 representation. Thus, each time step is compressed into
+64 × 4 × 4 = 1024 spatial features. These feature vectors are then restored into a six-step
+sequence and passed to a two-layer LSTM with a hidden size of 64, allowing the model
+to learn delayed hydrological responses from recent basin and lake conditions rather than
+treating each observation independently.
+42
+
+
+================================================================================
+PAGE 54 of 89
+================================================================================
+
+CHAPTER 4. RESULTS AND DISCUSSION
+Figure 4.2: Implemented CNN–LSTM architecture of PINN-2 used for temporal resolution
+evaluation.
+The final LSTM hidden state is passed to a compact fully connected regression block with
+a linear layer, SiLU activation, dropout, and a final three-output layer. These outputs are
+the predicted water-level change c
+∆h, a softplus-constrained dynamic Budyko parameter,
+and a positive runoff-scaling factor; training combines data loss with Budyko physics
+loss through adaptive uncertainty weighting, so PINN-2 is evaluated by both prediction
+accuracy and the physical consistency of the reconstructed Caspian Sea level dynamics.
+43
+
+
+================================================================================
+PAGE 55 of 89
+================================================================================
+
+CHAPTER 4. RESULTS AND DISCUSSION
+4.2.3
+PINN-3 (Penman-Based Evaporation Constraint) Setup
+PINN-3 uses the same CNN–LSTM backbone as PINN-2: six time steps, 13 input
+channels, and the identical convolution–pooling–LSTM block. This keeps the comparison
+methodologically fair, while the regression head is modified to output four time-step
+scalars instead of three: the normalized water-level change c
+∆ht and three Priestley–Taylor
+residual parameters.
+The three physics outputs are αPT,t, constrained to αPT,t ≥1.0 with a softplus trans-
+formation and unit offset; Cwind,t, constrained positive for aerodynamic transfer; and
+γrunoff,t, constrained positive for residual basin runoff. The 13 channels include precipita-
+tion, temperature, shortwave and longwave radiation, pressure, evaporation, dew-point
+temperature, wind components, runoff, snow water equivalent, and Volga discharge; all
+gridded variables are normalized per channel using training-split statistics.
+Training uses AdamW (weight decay 0.05) with a cosine-annealing learning-rate schedule
+from 3 × 10−4, gradient-norm clipping at 1.0, and physics weight λphys = 1.0 — all
+identical to PINN-2. The training horizon was set at 300 epochs with early stopping on
+validation MSE (patience 50). Dropout of 0.5 is applied between the two LSTM layers
+and inside the regressor head, matching PINN-2.
+Figure 4.3 shows the schematic structure of the PINN-3 regression head. The shared
+CNN–LSTM backbone (identical to Figure 4.2) terminates in a 64-dimensional vector
+that feeds a two-layer fully-connected block. The block produces four outputs: a direct
+linear output for the predicted water-level change, and three softplus-activated outputs
+for the physics coefficients. The αPT,t output additionally receives a constant offset of
++1.0 to enforce the Priestley–Taylor lower bound. This four-head structure means PINN-3
+does not only predict the target variable directly, but also estimates the internal physical
+parameters used in the energy-balance residual.
+44
+
+
+================================================================================
+PAGE 56 of 89
+================================================================================
+
+CHAPTER 4. RESULTS AND DISCUSSION
+Figure 4.3: CNN–LSTM architecture of PINN-3 with the four-head regressor: ∆h pre-
+diction plus three softplus-activated physics coefficients (αPT, Cwind, γrunoff). The CNN–
+LSTM backbone is identical to that of PINN-2 (Figure 4.2); the only architectural
+difference is the addition of the Cwind output head.
+The training objective combines the data loss (mean squared error between the predicted
+and observed water-level change) with the Priestley–Taylor physics loss. The data loss is
+computed in normalised space while the physics loss operates on raw metres-per-time-step
+quantities; this scale separation is identical to PINN-2 and preserves the cross-PINN
+comparability of the loss formulation.
+45
+
+
+================================================================================
+PAGE 57 of 89
+================================================================================
+
+CHAPTER 4. RESULTS AND DISCUSSION
+PINN-3 is therefore evaluated not only by prediction accuracy on the water-level-change
+time series, but also by whether the learned physics coefficients remain in physically
+interpretable ranges. A successful run produces αPT,t values close to the free-water
+reference of 1.26, positive Cwind,t values of order unity, and γrunoff,t values consistent with
+a partial routing of basin water surplus to the lake.
+4.3
+Temporal Resolution Selection Using PINN-2
+PINN-2 was selected as the temporal-resolution screening model because the Budyko
+constraint links basin precipitation, potential evapotranspiration, runoff partitioning, and
+lake-level response. This made it a suitable reference formulation for testing whether daily,
+10-day, or monthly aggregation produced the most stable physically constrained learning
+behaviour. The purpose of this stage was not to establish PINN-2 as an independent
+baseline, but to identify which temporal resolutions were appropriate for the final cross-
+model comparison.
+4.3.1
+Daily Dataset Results
+The daily dataset was evaluated as the highest-frequency temporal resolution in the
+experiment. The purpose of this test was to check whether increasing the number of
+time steps could improve the model’s ability to capture short-term water-level variability.
+However, the results showed that the daily resolution was not suitable for the final model
+comparison.
+Table 4.1: Evaluation results for the daily dataset.
+Metric
+Value
+Resolution
+1 day
+RMSE
+0.0147
+Correlation
+-0.0330
+R2
+-1.2358
+Initial validation loss
+9.65 × 10−5
+Final validation loss
+2.15 × 10−4
+As shown in Table 4.1, the daily dataset produced an RMSE of 0.0147, a correlation
+of -0.0330, and an R2 value of -1.2358 between actual and predicted daily water-level
+changes. Although the RMSE value is not extremely large in absolute terms, the near-zero
+46
+
+
+================================================================================
+PAGE 58 of 89
+================================================================================
+
+CHAPTER 4. RESULTS AND DISCUSSION
+negative correlation indicates that the model did not correctly capture the direction or
+pattern of daily water-level change. The negative R2 value gives an additional sign of
+weak model performance, because it means that the prediction explained less variance
+than a simple baseline based on the mean value. In addition, the validation loss increased
+from 9.65 × 10−5 at the beginning of training to 2.15 × 10−4 by the final epoch, which
+suggests that the model did not improve its generalization on the validation set during
+training.
+Figure 4.4: PINN-2 prediction results on the daily dataset: daily water-level change
+prediction and reconstructed absolute water level.
+Figure 4.4 further shows the weakness of the daily resolution. In the upper plot, the actual
+∆H values contain step-like changes, while the predicted values fluctuate independently
+and often move in the opposite direction. This means that the model was not learning
+the real daily water-level signal, but instead produced unstable short-term variations.
+The lower plot confirms this problem more clearly: the reconstructed predicted water
+level gradually separates from the actual water-level trajectory and creates an unrealistic
+upward trend during the test period.
+Based on these results, the daily dataset was excluded from the final comparison of
+PINN-1, PINN-2, and PINN-3. The main reason was not only the numerical error, but the
+lack of meaningful agreement between actual and predicted dynamics. Daily interpolation
+47
+
+
+================================================================================
+PAGE 59 of 89
+================================================================================
+
+CHAPTER 4. RESULTS AND DISCUSSION
+and short-term noise made this resolution unsuitable for representing the hydrological
+behaviour of the Caspian Sea in this model setup. Therefore, the final experiments were
+continued only with the monthly and 10-day datasets.
+4.3.2
+10-Day Dataset Results
+The 10-day dataset was tested after the daily-resolution experiment in order to evaluate
+whether a medium temporal resolution could preserve short-term water-level variability
+without introducing the same level of noise. Compared with the daily dataset, the 10-day
+resolution produced more meaningful behaviour, especially in the reconstruction of the
+absolute water-level trajectory.
+Table 4.2: Evaluation results for the 10-day dataset.
+Metric
+Value
+Resolution
+10 days
+RMSE
+0.0502
+Correlation
+0.3780
+R2
+0.0126
+Initial validation loss
+2.49 × 10−3
+Final validation loss
+2.98 × 10−3
+As shown in Table 4.2, the 10-day dataset produced an RMSE of 0.0502, a correlation
+of 0.3780, and an R2 value of 0.0126 between actual and predicted ∆H. The positive
+correlation indicates that the model captured part of the water-level change pattern,
+although the agreement was still limited for individual 10-day fluctuations. The small
+positive R2 value shows that the model explained only a very small share of the observed
+variance, but it still performed slightly better than a simple mean-based baseline. This
+suggests that the 10-day resolution provided more useful information than the daily
+dataset, even though its explanatory power remained weak. The validation loss changed
+from 2.49 × 10−3 at the beginning of training to 2.98 × 10−3 by the final epoch, showing
+that the model did not strongly improve on the validation set, but it remained more
+stable than the daily-resolution case.
+48
+
+
+================================================================================
+PAGE 60 of 89
+================================================================================
+
+CHAPTER 4. RESULTS AND DISCUSSION
+Figure 4.5: PINN-2 prediction results on the 10-day dataset: 10-day water-level change
+prediction and reconstructed absolute water level.
+Figure 4.5 shows that the predicted ∆H series does not reproduce every short-term
+peak and drop in the actual values. However, the lower plot demonstrates that the
+reconstructed absolute water level follows the general declining trajectory of the observed
+water level during the test period. This means that, even though the model struggled
+with exact 10-day fluctuations, the accumulated prediction preserved the main direction
+of the Caspian Sea level change.
+Based on these results, the 10-day dataset was retained for the final model comparison. It
+provided a better balance than the daily dataset: it contained more temporal detail than
+the monthly data, while avoiding the strongest instability observed at daily resolution.
+4.3.3
+Monthly Dataset Results
+The monthly dataset was tested as the lowest-frequency temporal resolution. Compared
+with the daily and 10-day versions, this dataset provides a smoother representation of
+the hydrological signal and reduces short-term noise in the water-level series. The model
+results show that monthly aggregation preserved the general direction of water-level
+49
+
+
+================================================================================
+PAGE 61 of 89
+================================================================================
+
+CHAPTER 4. RESULTS AND DISCUSSION
+change and produced the strongest agreement between actual and predicted ∆H among
+the tested temporal resolutions.
+Table 4.3: Evaluation results for the monthly dataset.
+Metric
+Value
+Resolution
+1 month
+RMSE
+0.0555
+Correlation
+0.7907
+R2
+0.6007
+Initial validation loss
+6.91 × 10−3
+Final validation loss
+3.08 × 10−3
+As shown in Table 4.3, the monthly dataset produced an RMSE of 0.0555, a correlation
+of 0.7907, and an R2 value of 0.6007 between actual and predicted ∆H. The positive and
+relatively high correlation indicates that the model was able to follow the main monthly
+pattern of water-level change, even though some individual peaks and drops were still
+not reproduced exactly. The R2 value shows that the model explained about 60% of the
+observed monthly variance, which is substantially stronger than the daily and 10-day
+results. This confirms that monthly aggregation reduced short-term noise and provided
+the most reliable temporal resolution for representing the main Caspian Sea level signal
+in this experiment. The validation loss also decreased from 6.91 × 10−3 to 3.08 × 10−3
+during training, which suggests better validation behaviour than the higher-frequency
+datasets.
+50
+
+
+================================================================================
+PAGE 62 of 89
+================================================================================
+
+CHAPTER 4. RESULTS AND DISCUSSION
+Figure 4.6: PINN-2 prediction results on the monthly dataset: monthly water-level change
+prediction and reconstructed absolute water level.
+Figure 4.6 shows that the predicted ∆H follows the main oscillations of the observed
+monthly water-level changes. The reconstructed absolute water level also captures the
+overall declining trajectory of the Caspian Sea during the test period. However, the
+predicted reconstruction is generally lower than the observed level in the middle and
+later parts of the test period, which shows that some cumulative error remains.
+4.3.4
+Final Choice of Temporal Resolutions
+Based on the temporal-resolution tests, the daily dataset was not selected for the final
+comparison because it produced unstable short-term behaviour and weak agreement
+with the observed water-level changes. The monthly and 10-day datasets were therefore
+retained as the two final experimental resolutions. This choice allows each model, PINN-1,
+PINN-2, and PINN-3, to be evaluated under the same conditions while comparing two
+different representations of the Caspian Sea signal: a smoother monthly version that
+emphasizes long-term hydrological tendencies, and a 10-day version that preserves more
+intermediate variability. As a result, the final model assessment focuses on comparing
+the performance of every PINN formulation on both monthly and 10-day datasets.
+51
+
+
+================================================================================
+PAGE 63 of 89
+================================================================================
+
+CHAPTER 4. RESULTS AND DISCUSSION
+It should be noted that the PINN-2 metrics used in this resolution-selection stage are later
+retained in the model-comparison tables for the selected 10-day and monthly resolutions.
+This is done for continuity, because PINN-2 represents the Budyko-constrained reference
+formulation used throughout the experimental design. However, these values should not be
+interpreted as a separate independent post-selection control run. A stricter design would
+require retraining PINN-2 after fixing the temporal resolution, ideally with repeated
+random seeds or a walk-forward validation scheme.
+4.4
+Main Comparative Result
+Before presenting detailed per-model and per-resolution analyses, the main comparative
+outcome is summarized here so that all subsequent results can be interpreted in this
+context. Table 4.4 reports the monthly performance of the no-physics CNN–LSTM baseline
+and the three physics-informed formulations, all trained under identical conditions: the
+same neural architecture, the same chronological split, and the same look-back window.
+Table 4.4: Monthly ablation study with and without physics-informed loss. The no-physics
+CNN–LSTM baseline achieves the lowest RMSE, while PINN-3 achieves the highest
+correlation and R2.
+Model
+Physics constraint
+λphys Resolution
+RMSE
+Correlation
+R2
+CNN–LSTM base-
+line
+None
+0
+1 month
+0.0192
+0.7945
+0.6305
+PINN-1
+Water balance
+1
+1 month
+0.0196
+0.7846
+0.6154
+PINN-2
+Budyko
+1
+1 month
+0.0555
+0.7907
+0.6007
+PINN-3
+Penman / energy bal-
+ance
+1
+1 month
+0.0494
+0.8279
+0.6841
+The no-physics CNN–LSTM baseline achieved the lowest monthly RMSE (0.0192 m), while
+PINN-3 achieved the highest correlation (0.8279) and R2 (0.6841). PINN-1 produced an
+RMSE close to the baseline (0.0196 m) but did not improve over it. PINN-2 had the highest
+RMSE among the four models, although its correlation remained competitive. Therefore,
+the physics-informed formulations did not uniformly outperform the unconstrained
+baseline on pointwise error, but they did contribute to pattern-level agreement and
+variance explanation, most clearly in the case of PINN-3. The detailed comparisons in
+the following sections should be read against this overall result.
+52
+
+
+================================================================================
+PAGE 64 of 89
+================================================================================
+
+CHAPTER 4. RESULTS AND DISCUSSION
+Figure 4.7: Monthly no-physics CNN–LSTM baseline prediction of Caspian Sea level
+change during the test period. The baseline reproduces the main monthly variability of
+∆H, achieving RMSE = 0.0192 m and R2 = 0.6305.
+Several factors may explain why the physics-informed formulations did not achieve
+the lowest RMSE. First, the CNN–LSTM architecture already receives a rich set of
+atmospheric, hydrological, and river-discharge inputs, so the no-physics baseline can
+learn a substantial part of the seasonal and low-frequency monthly signal directly from
+data. Second, the physics loss was applied with a fixed weighting coefficient, while the
+optimal balance between data fit and physical consistency may vary across regimes and
+temporal resolutions. Third, the physical residuals combine variables from heterogeneous
+sources such as ERA5, ERA5-Land, GLDAS, DAHITI, and Volga discharge, each with
+its own uncertainty and scale. If these residual components are not perfectly calibrated,
+the physics term can improve interpretability and temporal pattern agreement without
+necessarily reducing pointwise RMSE. Therefore, the ablation result should be interpreted
+as evidence that physics-informed constraints are valuable for structure and interpretation,
+but require careful loss scaling and calibration to outperform a strong neural baseline on
+RMSE.
+4.5
+Comparison of PINN Models on the 10-Day
+Dataset
+PINN-1 Results on the 10-Day Dataset
+PINN-1 was evaluated on the 10-day dataset to test how the water-balance model performs
+at a medium temporal resolution. This resolution keeps more short-term variation than
+53
+
+
+================================================================================
+PAGE 65 of 89
+================================================================================
+
+CHAPTER 4. RESULTS AND DISCUSSION
+the monthly dataset, while avoiding the strongest instability observed in the daily dataset.
+The model produced an RMSE of 0.0433, a correlation of 0.4957, and an R2 value of
+0.2211 for ∆H prediction, indicating that the water-balance constraint explained part of
+the observed 10-day variability but still left substantial unexplained variation.
+Table 4.5: PINN-1 evaluation results on the 10-day dataset.
+Metric
+Value
+Resolution
+10 days
+RMSE
+0.0433
+Correlation
+0.4957
+R2
+0.2211
+The results in Table 4.5 indicate that PINN-1 reproduced the 10-day water-level-change
+signal only partially. The moderate positive correlation shows that the model captured
+some correspondence in the timing and direction of ∆H, while the relatively low R2
+value indicates that a large share of the short-term variance remained unexplained. This
+behaviour is also visible in the upper panel of Figure 4.8, where the predicted ∆H series
+is smoother than the observed series. Therefore, the water-balance constraint appears
+to support the main tendency of the signal, but it does not fully represent rapid 10-day
+fluctuations and local extremes.
+54
+
+
+================================================================================
+PAGE 66 of 89
+================================================================================
+
+CHAPTER 4. RESULTS AND DISCUSSION
+Figure 4.8: PINN-1 prediction results on the 10-day dataset: water-level change prediction
+and reconstructed absolute water level.
+The lower plot shows that the reconstructed PINN-1 water level follows the overall
+downward movement of the observed Caspian Sea level. The predicted trajectory captures
+several major rises and declines, especially in the early and middle parts of the test
+period. However, it is smoother than the observed curve and does not reproduce all local
+fluctuations. Toward the later part of the reconstruction, the predicted level becomes
+slightly lower than the actual level, showing some accumulated error. Overall, the 10-day
+PINN-1 result indicates that the water-balance model can represent the main long-term
+trajectory, but it still has limitations in capturing sharper short-term variations in ∆H.
+PINN-2: Budyko-Constrained Model
+For the 10-day dataset, PINN-2 serves as the Budyko-constrained reference formulation
+for the later comparison of different model formulations. When evaluating the relationship
+between the predicted and observed water-level changes (∆H), the model yielded an
+RMSE of 0.0502, a Pearson correlation coefficient of 0.3780, and a coefficient of determi-
+nation (R2) of 0.0126. These reference-formulation statistical outputs are compiled in
+Table 4.6 below.
+55
+
+
+================================================================================
+PAGE 67 of 89
+================================================================================
+
+CHAPTER 4. RESULTS AND DISCUSSION
+Table 4.6: PINN-2 evaluation results on the 10-day dataset.
+Metric
+Value
+Resolution
+10 days
+RMSE
+0.0502
+Correlation
+0.3780
+R2
+0.0126
+As shown by the metrics in the table above, and as previously outlined in the temporal-
+resolution testing section, the marginal, yet positive, R2 value indicates that the PINN-2
+architecture accounts for only a minimal fraction of the observed variance in the high-
+frequency ∆H signal. Nevertheless, the model still performs slightly better than a simple
+mean-based baseline. While the model struggles to reproduce every individual sharp
+fluctuation in the 10-day delta heights, it captures the broader cumulative low-frequency
+trend. When these predicted increments are integrated to reconstruct the absolute
+water level, the network reproduces the main test-period trajectory. The alignment and
+cumulative divergence between the predicted trend and the observed absolute water level
+over the test period are illustrated in Figure 4.9.
+56
+
+
+================================================================================
+PAGE 68 of 89
+================================================================================
+
+CHAPTER 4. RESULTS AND DISCUSSION
+Figure 4.9: PINN-2 prediction and reconstructed absolute water level for the 10-day
+dataset.
+Together with these accuracy plots, the model’s validation loss changed from 2.49 × 10−3
+to 2.98 × 10−3, showing that the network did not suffer from severe overfitting during
+optimization. While further analysis of this specific simulation run is provided in the
+temporal-resolution testing segment of this chapter, this subsection uses these exact
+results as the PINN-2 reference formulation. By retaining this reference Budyko model, we
+can assess whether integrating a strict water-balance constraint (PINN-1) or a targeted
+evaporation constraint (PINN-3) improves predictive accuracy, cumulative temporal
+consistency, or physical interpretability at the identical 10-day resolution.
+PINN-3: Penman-Constrained Model
+PINN-3 was evaluated on the 10-day dataset to examine whether the Penman-constrained
+model could benefit from medium-resolution atmospheric forcing. Since PINN-3 is based
+57
+
+
+================================================================================
+PAGE 69 of 89
+================================================================================
+
+CHAPTER 4. RESULTS AND DISCUSSION
+on an energy-balance evaporation constraint, the 10-day resolution is useful because it
+preserves more variation in radiation, temperature, humidity, wind, and precipitation
+than the monthly dataset, while avoiding the excessive noise of daily data. The model
+produced an RMSE of 0.0432, a correlation of 0.4989, and an R2 value of 0.2469 for ∆H
+prediction.
+Table 4.7: PINN-3 evaluation results on the 10-day dataset.
+Metric
+Value
+Resolution
+10 days
+RMSE
+0.0432
+Correlation
+0.4989
+R2
+0.2469
+The results in Table 4.7 show that PINN-3 captured part of the 10-day water-level-change
+dynamics, but the prediction remained incomplete. The correlation of 0.4989 indicates
+moderate positive agreement between observed and predicted ∆H, while the R2 value of
+0.2469 shows that the model explained only about one quarter of the short-term variance.
+The RMSE of 0.0432 indicates a limited average error, but the remaining unexplained
+variability suggests that 10-day water-level changes were still affected by noise, delayed
+hydrological effects, and processes not fully represented by the instantaneous Penman-
+based energy constraint.
+Figure 4.10: PINN-3 test-set reconstruction on the 10-day dataset.
+Figure 4.10 shows that PINN-3 captures the overall declining trajectory of the Caspian
+Sea level during the test period. The predicted curve follows the main seasonal oscillations
+and reproduces several major peaks and troughs, especially before 2022. However, the
+prediction is smoother than the observed series and does not fully capture sharper local
+58
+
+
+================================================================================
+PAGE 70 of 89
+================================================================================
+
+CHAPTER 4. RESULTS AND DISCUSSION
+drops. After 2022, the predicted water level is often slightly higher than the observed
+curve, which indicates some underestimation of the decline in the later test period.
+Overall, the 10-day PINN-3 result suggests that the Penman-based energy constraint
+provides a reasonable reconstruction of the long-term trend, but still has limitations in
+representing stronger short-term water-level fluctuations.
+Comparative Evaluation
+Table 4.8: Comparative evaluation of all PINN models on the 10-day dataset.
+Model
+Resolution
+RMSE
+Correlation
+R2
+PINN-1
+10 days
+0.0433
+0.4957
+0.2211
+PINN-2
+10 days
+0.0502
+0.3780
+0.0126
+PINN-3
+10 days
+0.0432
+0.4989
+0.2469
+The results show that PINN-3 achieved the best numerical performance on the 10-day
+dataset, with the lowest RMSE, the highest correlation, and the highest R2. However,
+the improvement over PINN-1 is small rather than decisive: the RMSE differs by only
+0.0001, the correlation by 0.0032, and the R2 value by 0.0258. This means that the
+Penman-based evaporation constraint gives a slight advantage, but the water-balance
+constraint in PINN-1 remains almost equally competitive. In contrast, PINN-2 is clearly
+weaker: its higher RMSE, lower correlation, and very low R2 value of 0.0126 show that
+the Budyko-based runoff constraint explains only a small part of the 10-day variance.
+Therefore, Budyko partitioning appears more useful for broad basin-scale interpretation
+than for medium-frequency ∆H prediction, where short-term storage effects, evaporation
+variability, and delayed hydrological responses remain important.
+Overall, the 10-day comparison indicates that constraints directly connected to lake
+storage and evaporation are more useful than a basin runoff constraint alone. PINN-3
+can be selected as the best-performing 10-day model, but PINN-1 provides nearly the
+same accuracy with a simpler water-balance structure. Therefore, the main analytical
+conclusion is not that one model fully solves the 10-day prediction problem, but that
+physically targeted constraints improve the representation of Caspian Sea level dynamics
+compared with the Budyko-only reference case.
+59
+
+
+================================================================================
+PAGE 71 of 89
+================================================================================
+
+CHAPTER 4. RESULTS AND DISCUSSION
+4.6
+Comparison of PINN Models on the Monthly
+Dataset
+PINN-1 Results on the Monthly
+PINN-1 was evaluated on the monthly dataset to test how the water-balance model
+performs under a smoother temporal resolution. Compared with the 10-day dataset, the
+monthly version reduces short-term noise and gives the mass-conservation constraint a
+more stable hydrological signal. The model produced an RMSE of 0.0196, a correlation of
+0.7846, and an R2 value of 0.6154 for ∆H prediction. These values show that the model
+explained a clear share of the monthly water-level-change variability and performed more
+consistently than at the 10-day scale.
+Table 4.9: PINN-1 evaluation results on the monthly dataset.
+Metric
+Value
+Resolution
+1 month
+RMSE
+0.0196
+Correlation
+0.7846
+R2
+0.6154
+The results in Table 4.9 indicate that PINN-1 captured the monthly ∆H signal with
+relatively strong agreement. The correlation of 0.7846 shows that the predicted and
+observed monthly changes follow a similar pattern, while the R2 value of 0.6154 suggests
+that the water-balance formulation explained a substantial part of the observed variance.
+The RMSE of 0.0196 is also considerably lower than the 10-day PINN-1 result, which
+supports the interpretation that monthly aggregation is better aligned with the physical
+time scale of the water-balance constraint.
+60
+
+
+================================================================================
+PAGE 72 of 89
+================================================================================
+
+CHAPTER 4. RESULTS AND DISCUSSION
+Figure 4.11: PINN-1 prediction results on the monthly dataset: monthly water-level
+change prediction and reconstructed absolute water level.
+Figure 4.11 confirms this behaviour visually. In the upper panel, the predicted ∆H
+curve is smoother than the observed series, but it follows the main seasonal oscillations
+and captures the repeated alternation between positive and negative monthly changes.
+The lower panel shows that the reconstructed absolute water level follows the overall
+declining trajectory of the Caspian Sea during the test period. The predicted curve
+slightly overestimates the water level in some middle sections, but it remains close to the
+observed trend and converges toward the actual level near the end of the reconstruction.
+Overall, the monthly PINN-1 result shows that the water-balance constraint is more
+effective when the target signal is aggregated to a hydrologically stable temporal scale.
+PINN-2 Results on the Monthly
+For the monthly dataset, PINN-2 confirms the primary conclusions drawn from the
+monthly temporal-resolution experiments. When evaluated at this coarser temporal scale,
+the relationship between the predicted and observed monthly water-level changes (∆H)
+yielded an RMSE of 0.0555, a strong Pearson correlation coefficient of 0.7907, and an R2
+value of 0.6007. These statistical indicators are compiled in Table 4.10 below to establish
+the Budyko-constrained reference formulation for the monthly comparative analysis.
+61
+
+
+================================================================================
+PAGE 73 of 89
+================================================================================
+
+CHAPTER 4. RESULTS AND DISCUSSION
+Table 4.10: PINN-2 reference formulation evaluation results on the monthly dataset.
+Metric
+Value
+Resolution
+Monthly
+RMSE
+0.0555
+Correlation
+0.7907
+R2
+0.6007
+This high R2 value indicates that the Budyko-constrained formulation captures the
+dominant monthly structural dynamics of ∆H far more effectively than it did the 10-day
+signal. Compared directly with the 10-day PINN-2 run—where the correlation was limited
+to 0.3780 and the R2 stood at a marginal 0.0126—the monthly variant demonstrates a
+profound gain in explanatory power.Even though the monthly RMSE is slightly higher
+in absolute terms due to the larger magnitude of cumulative monthly changes, the
+model’s capacity to track both the individual delta variations and the absolute water
+level reconstruction is significantly improved. This transition from high-frequency noise
+to stabilized macro-trends is clearly visible in the monthly time-series and absolute
+reconstruction tracking plots presented in Figure 4.12.
+Figure 4.12: PINN-2 monthly model performance: Delta H prediction comparison (top)
+and absolute water level reconstruction tracking (bottom).
+62
+
+
+================================================================================
+PAGE 74 of 89
+================================================================================
+
+CHAPTER 4. RESULTS AND DISCUSSION
+Overall, this stable convergence indicates that the monthly resolution provides a more
+suitable setting for physical regularization. As with the previous resolution, this specific
+run is retained as the monthly PINN-2 reference formulation, allowing us to evaluate
+whether the alternative constraint formulations of PINN-1 or PINN-3 can further refine
+the model’s accuracy and physical consistency at a monthly scale.
+PINN-3 Results on the Monthly
+PINN-3 was evaluated on the monthly dataset to assess how the Penman-constrained
+model performs when the target signal is aggregated to a more stable hydrological scale.
+Since the model uses an energy-balance evaporation constraint, the monthly resolution is
+suitable because it reduces short-term noise while still preserving seasonal changes in
+radiation, temperature, humidity, wind, and lake-level response. The model produced an
+RMSE of 0.0494, a correlation of 0.8279, and an R2 value of 0.6841 for ∆H prediction.
+For the reconstructed absolute water level, the model achieved an MAE of 0.0895, an
+RMSE of 0.1088, and an R2 value of 0.9401.
+Table 4.11: PINN-3 evaluation results on the monthly dataset.
+Metric
+Value
+Resolution
+1 month
+RMSE
+0.0494
+Correlation
+0.8279
+R2
+0.6841
+The results in Table 4.11 show that PINN-3 performed strongly on the monthly dataset.
+The correlation of 0.8279 indicates that the predicted and observed monthly water-level
+changes followed a similar pattern, while the R2 value of 0.6841 shows that the model
+explained a substantial part of the ∆H variance.
+63
+
+
+================================================================================
+PAGE 75 of 89
+================================================================================
+
+CHAPTER 4. RESULTS AND DISCUSSION
+Figure 4.13: PINN-3 test-set reconstruction on the monthly dataset.
+Figure 4.13 confirms the numerical results. The predicted curve follows the long-term
+decline of the observed water level and reproduces the main seasonal peaks and troughs
+across the test period. Some deviations remain, especially around sharper local drops, but
+the prediction stays close to the observed trajectory and does not show strong cumulative
+drift. In the middle part of the test period, the predicted curve is slightly lower than the
+observed level, while after 2023 it is often slightly higher, suggesting small phase and
+amplitude differences in the reconstructed seasonal cycle.
+Figure 4.14: PINN-3 monthly training loss history showing data loss, Penman physics
+loss, and validation loss.
+Figure 4.14 shows that the raw data loss decreases quickly during the first training
+epochs and then stabilizes at a low level. The validation loss follows the same general
+pattern and remains stable after the initial decrease, which suggests that the model
+does not show clear late-stage overfitting. The Penman physics loss remains higher than
+the data and validation losses throughout training, meaning that the energy-balance
+constraint is harder to satisfy than the direct data-fitting objective. However, the physics
+64
+
+
+================================================================================
+PAGE 76 of 89
+================================================================================
+
+CHAPTER 4. RESULTS AND DISCUSSION
+loss gradually decreases and stays controlled, showing that the Penman constraint still
+contributes to the optimization process instead of being ignored. Overall, the monthly
+PINN-3 result indicates that the evaporation-constrained energy-balance formulation is
+effective for reconstructing the long-term water-level trajectory, while some short-term
+and seasonal deviations still remain.
+Comparative Evaluation
+Table 4.12: Final comparison of PINN models on 10-day and monthly datasets.
+Model
+Resolution
+RMSE
+Correlation
+R2
+PINN-1
+10 days
+0.0433
+0.4957
+0.2211
+PINN-2
+10 days
+0.0502
+0.3780
+0.0126
+PINN-3
+10 days
+0.0432
+0.4989
+0.2469
+PINN-1
+1 month
+0.0196
+0.7846
+0.6154
+PINN-2
+1 month
+0.0555
+0.7907
+0.6007
+PINN-3
+1 month
+0.0494
+0.8279
+0.6841
+Within the three physics-informed formulations, PINN-3 produced the highest monthly
+correlation (0.8279) and the highest R2 (0.6841), indicating the best pattern-level agree-
+ment and variance explanation among the PINN variants. PINN-1 produced the lowest
+RMSE among the PINNs (0.0196 m). PINN-2 showed competitive monthly correlation
+(0.7907), but the highest RMSE among the four models. However, none of the physics-
+informed formulations outperformed the no-physics CNN–LSTM baseline (RMSE =
+0.0192 m, R2 = 0.6305) on pointwise error. The monthly results are more stable than the
+10-day results, but the comparative ranking between PINN formulations and the baseline
+must be interpreted as a comparison within the chosen experimental design rather than
+as evidence that physics-informed learning is uniformly preferable in this setting.
+Regime-Shift Interpretation of the Test Period
+An important caveat in the interpretation of the final results is the hydroclimatic regime
+shift between the training and testing periods. The chronological split was necessary to
+avoid information leakage, but it also means that the model was trained mostly on earlier
+dynamics and tested on a period characterized by a more persistent decline in Caspian
+Sea level. Therefore, the test results represent performance under a non-stationary target
+distribution rather than performance under a fully symmetric train–test regime.
+65
+
+
+================================================================================
+PAGE 77 of 89
+================================================================================
+
+CHAPTER 4. RESULTS AND DISCUSSION
+This point is especially important for the reconstructed absolute water-level curves.
+Since the 2018–2026 test period contains a strong downward trend, high absolute-level
+reconstruction agreement can be partly supported by capturing the dominant trend itself.
+Such metrics should therefore not be interpreted as complete proof that the model has
+learned all hydrological mechanisms of regime change. Instead, the results are better
+understood as evidence that the monthly models can reproduce the main declining
+trajectory and part of the monthly variability under a shifted test regime.
+For this reason, the comparative conclusions in this chapter emphasize relative behaviour
+across formulations, monthly ∆H metrics, the no-physics ablation baseline, and physical
+interpretability rather than claiming definitive forecasting robustness across all possi-
+ble Caspian Sea regimes. A stronger validation design would require walk-forward or
+expanding-window evaluation, where the training window is progressively extended and
+models are repeatedly tested on later periods. This is left as a priority for future work.
+A related issue is the difference between evaluating reconstructed absolute water level
+H and evaluating monthly water-level change ∆H. Absolute-level reconstruction can
+produce high R2 values when the model follows the dominant long-term trajectory of
+the test period. In the 2018–2026 test interval, this trajectory is strongly downward, so
+a high absolute-level R2 partly reflects trend-following ability. For this reason, the ∆H
+metrics are more conservative indicators of short-term predictive skill. The monthly ∆H
+results, where R2 values are approximately in the 0.6100–0.6800 range for the strongest
+formulations, provide a stricter assessment of whether the models capture month-to-month
+water-level variability rather than only reconstructing the overall declining path.
+Constant-Area Assumption
+The interpretation of the water-balance and evaporation-related results is also affected
+by the constant-area assumption. In the implemented PINN formulations, Alake is used
+as a fixed reference area for converting Volga discharge into an equivalent water-level
+contribution. This allows all monthly physical terms to be expressed in metres and
+compared with the predicted ∆H. However, the Caspian Sea is not geometrically static:
+as the water level declines, surface area and shallow-water extent change, especially in
+the northern basin. Therefore, the constant-area assumption may introduce a scaling
+bias into the physical residual, particularly during periods of stronger level decline.
+This limitation does not invalidate the comparison between the tested formulations,
+66
+
+
+================================================================================
+PAGE 78 of 89
+================================================================================
+
+CHAPTER 4. RESULTS AND DISCUSSION
+because all final models are evaluated on the same observed target and under the same
+temporal split. However, it means that the physical interpretation of the magnitude
+of inflow and evaporation contributions should be treated cautiously. A dynamic area
+formulation A(H) would make the storage-to-level conversion more physically realistic
+and should be included in future extensions of the model.
+Conceptual Overlap Between Runoff Terms
+The interpretation of the model comparison also requires caution because the physical
+formulations are not fully orthogonal. PINN-1 is primarily a lake water-balance model,
+but its residual basin term γother max(0, Pbasin −PETbasin) introduces a simplified basin
+water-surplus correction. This correction is conceptually related to the runoff-partitioning
+problem addressed more explicitly by PINN-2. Therefore, the comparison between PINN-1
+and PINN-2 should not be read as a completely clean separation between water-balance
+physics and runoff-partitioning physics.
+The more appropriate interpretation is that PINN-1 represents a direct water-balance
+formulation with a coarse residual correction for unresolved basin inflow, whereas PINN-
+2 makes basin runoff partitioning the central physical constraint through the Budyko
+framework. This distinction explains why the models can share some hydrological intuition
+while still testing different levels of physical structure. It also supports a cautious
+interpretation of the comparative results: differences in performance reflect not only
+different physical laws, but also different ways of representing basin contribution to
+lake-level change.
+Use of PINN-2 as a Reference Formulation
+A methodological limitation concerns the dual role of PINN-2 in the experimental
+workflow. PINN-2 was first used as the reference model for temporal-resolution screening
+in Section 4.3, where daily, 10-day, and monthly resolutions were compared. The same
+trained PINN-2 results at the selected 10-day and monthly resolutions were then retained
+as the Budyko-constrained reference formulation in the final model comparison.
+This design choice was made for continuity: PINN-2 provides the clearest basin-scale
+runoff-partitioning constraint, making it suitable for testing the effect of temporal
+aggregation. However, it also means that the PINN-2 metrics should not be interpreted as
+independent post-selection validation evidence. The comparison among PINN-1, PINN-
+67
+
+
+================================================================================
+PAGE 79 of 89
+================================================================================
+
+CHAPTER 4. RESULTS AND DISCUSSION
+2, PINN-3, and the no-physics CNN–LSTM baseline should therefore be read as a
+comparison of formulations under the selected temporal resolutions, not as a nested
+validation experiment with a separately retrained post-selection control.
+This limitation affects the interpretation of model ranking rather than the validity of the
+reported metrics themselves. The reported PINN-2 results remain valid for the trained
+Budyko-constrained model, but they do not provide an additional independent test after
+resolution selection. A stronger experimental design would retrain PINN-1, PINN-2,
+PINN-3, and the no-physics CNN–LSTM baseline after fixing the temporal resolution,
+using multiple random seeds and walk-forward or expanding-window validation. In this
+thesis, this is treated as future work, while the multi-seed experiment was added for
+PINN-3 to test the stability of the best-performing physics-informed formulation in the
+monthly comparison.
+4.7
+Multi-Seed Stability Analysis for PINN-3
+Because neural-network results can depend on random initialization, the monthly PINN-3
+formulation was retrained using five independent random seeds. All experimental settings
+were kept identical across runs, including the CNN–LSTM backbone, monthly input
+resolution, chronological train–validation–test split, and physics-loss weight. The purpose
+of this experiment was not to introduce a new model, but to test whether the PINN-3
+result was stable across initializations.
+Table 4.13: Multi-seed stability of monthly PINN-3 on the test period.
+Metric
+Mean
+Std
+Min
+Max
+RMSE (∆H), m
+0.0486
+0.0003
+0.0483
+0.0488
+Correlation (∆H)
+0.8341
+0.0016
+0.8319
+0.8361
+R2 (∆H)
+0.6939
+0.0032
+0.6909
+0.6981
+RMSE (H), m
+0.1857
+0.0397
+0.1260
+0.2266
+R2 (H)
+0.8194
+0.0712
+0.7405
+0.9198
+The multi-seed results show that the PINN-3 ∆H metrics are highly stable across random
+initializations. The standard deviation of RMSE is only 0.0003 m, while the standard
+deviation of R2 is 0.0032. This indicates that the month-to-month predictive skill of
+PINN-3 is not an artifact of a single favorable seed. The reconstructed absolute water-level
+metrics show larger variability, especially for R2(H), which is expected because absolute-
+68
+
+
+================================================================================
+PAGE 80 of 89
+================================================================================
+
+CHAPTER 4. RESULTS AND DISCUSSION
+level reconstruction accumulates monthly errors through time and is more sensitive to
+small phase differences in the declining test-period trajectory.
+Figure 4.15: Distribution of PINN-3 test metrics across five random seeds for monthly
+∆H prediction.
+Figure 4.16: Mean PINN-3 reconstructed water-level trajectory with ±1σ uncertainty
+envelope across five seeds.
+Overall, the multi-seed experiment strengthens the interpretation of PINN-3 as the most
+stable physics-informed formulation for pattern-level monthly reconstruction. It also
+clarifies the difference between ∆H and absolute-level evaluation: the ∆H metrics are seed-
+stable, while absolute reconstructed water level remains more sensitive to accumulated
+deviations during the shifted 2018–2026 test regime.
+69
+
+
+================================================================================
+PAGE 81 of 89
+================================================================================
+
+CHAPTER 4. RESULTS AND DISCUSSION
+4.8
+Threats to Validity
+This section consolidates the methodological limitations of the study that may affect
+the interpretation of the reported metrics. The purpose is to make these threats explicit
+in one place, rather than leave them scattered across the methodology and discussion
+sections.
+Target distribution shift in the test period. The chronological split preserves tempo-
+ral causality and avoids information leakage, but the 2018–2026 test period corresponds
+to a stronger declining regime than most of the 1993–2014 training period. As a result,
+the test set is not a randomly sampled hold-out subset but an out-of-regime evaluation
+window. High agreement on reconstructed absolute water level partly reflects the ability
+to follow the dominant downward trajectory. The ∆H metrics are therefore the more
+conservative indicators of month-to-month predictive skill.
+Constant lake-area assumption. The storage-to-level conversion uses a fixed reference
+Alake. As discussed in Section 3.7, even a surface-area change of only a few percent would
+produce a similar relative scaling error in the converted inflow contribution Qvolga∆t/Alake.
+This affects the magnitude and calibration of the physics-informed residual, but not the
+supervised data loss.
+Dual role of PINN-2. PINN-2 was used both for temporal-resolution screening and
+as the Budyko-constrained reference formulation in the final comparison. The reported
+metrics are valid within the chosen experimental design, but they are not equivalent to
+independent post-selection validation evidence.
+Conceptual overlap between PINN-1 and PINN-2. The residual basin-surplus
+term in PINN-1 implements a simplified version of the runoff-partitioning logic made
+explicit in PINN-2. The comparison should therefore be read as a comparison of different
+levels of physical explicitness rather than of fully orthogonal physical mechanisms.
+Fixed physics-loss weight. All physics-informed models were trained with λphys = 1.0.
+A sensitivity analysis on this hyperparameter was not performed. As discussed in the
+physics-informed forecasting literature, the relative weighting of data and physics losses
+can substantially affect predictive behaviour. The present results should therefore be
+interpreted under this fixed-weight assumption.
+Multi-seed evaluation only for PINN-3. The stability of PINN-3 was verified across
+70
+
+
+================================================================================
+PAGE 82 of 89
+================================================================================
+
+CHAPTER 4. RESULTS AND DISCUSSION
+five random seeds, but PINN-1, PINN-2, and the no-physics CNN–LSTM baseline were
+each trained from a single random initialization. The numerical ranking of the four
+models could therefore be partly influenced by initialization effects for the non-PINN-3
+entries. Repeating the multi-seed analysis for all four models is identified as a priority
+for future work.
+Volga discharge as input feature versus explicit physical term. In PINN-2
+and PINN-3, Volga discharge is provided as an input feature but not added explicitly
+inside the physical residual to avoid double counting. This means the Volga signal enters
+training mainly through the data-loss pathway, which leads to asymmetric regularization
+compared with PINN-1, where Volga discharge appears explicitly in the water-balance
+residual.
+Source heterogeneity. The integrated dataset combines ERA5, ERA5-Land, GLDAS,
+DAHITI, and GloFAS products, each with its own spatial grid, temporal resolution, and
+uncertainty profile. The harmonization steps described in Section 3.3 reduce, but do not
+eliminate, the impact of these inconsistencies on the physical residual.
+Taken together, these threats do not invalidate the reported metrics, but they constrain
+the strength of comparative claims that can be drawn from them. In particular, conclusions
+about whether physics-informed learning is uniformly preferable to unconstrained neural
+learning in closed-basin hydrology would require the validation design outlined in the
+Conclusion as future work.
+71
+
+
+================================================================================
+PAGE 83 of 89
+================================================================================
+
+Chapter 5
+Conclusion
+This thesis makes two main contributions. First, it presents a reproducible multi-source
+data integration pipeline that combines ERA5, ERA5-Land, GLDAS, DAHITI, and
+Volga discharge data into unified monthly, 10-day, and daily datasets for closed-basin
+hydroclimatic modelling of the Caspian Sea over 1993–2026. Second, it provides an em-
+pirical comparison of three Physics-Informed Neural Network formulations, namely water
+balance, Budyko-constrained runoff partitioning, and Penman/Priestley–Taylor energy
+balance, against a no-physics CNN–LSTM baseline trained under identical conditions.
+Together, these contributions provide a process-aware experimental framework for testing
+when physics-informed learning is numerically beneficial in closed-basin level prediction
+and when a strong unconstrained neural baseline remains competitive.
+The main quantitative outcome of the work is that the no-physics CNN–LSTM baseline
+achieved the lowest monthly RMSE (0.0192 m), while PINN-3 achieved the highest
+correlation (0.8279) and R2 (0.6841) among all four monthly models. This result clarifies
+an important methodological point for the broader physics-informed hydrology literature:
+when the data-driven backbone already receives a rich set of atmospheric, hydrological,
+and discharge inputs, the unconstrained network can capture a substantial part of the
+statistical signal directly from data. Under these conditions, the numerical advantage
+of adding a physics-informed loss term depends on careful calibration of loss weight-
+ing, residual scaling, and the match between the imposed constraint and the observed
+hydroclimatic regime.
+The five-seed stability test of PINN-3 confirms that the reported ∆H performance is
+not strongly dependent on a single random initialization (RMSE = 0.0486 ± 0.0003).
+72
+
+
+================================================================================
+PAGE 84 of 89
+================================================================================
+
+CHAPTER 5. CONCLUSION
+The wider variability observed in absolute-level R2 across seeds further supports the
+interpretation that ∆H metrics provide a more conservative measure of predictive skill
+than reconstructed-level metrics, particularly under the declining test regime of 2018–
+2026.
+The temporal-resolution screening identified monthly aggregation as the most reliable
+scale for physically constrained learning on this dataset. Daily resolution produced
+unstable predictions and was excluded; 10-day resolution preserved some intermediate
+variability but had limited explanatory power. This finding is itself a methodological
+contribution: for closed-basin level modelling with the available reanalysis and altimetry
+data, sub-monthly temporal resolutions amplify noise faster than they add usable physical
+signal.
+Several limitations remain. The constant reference lake-area assumption simplifies the
+storage-to-level conversion and should be replaced in future work by a dynamic hypso-
+metric relation or bathymetry-based storage–elevation curve. The comparison between
+PINN-1 and PINN-2 should also be interpreted with caution because the residual basin-
+surplus term in PINN-1 partially overlaps with the runoff-partitioning logic made explicit
+in PINN-2. In addition, PINN-2 was used both for temporal-resolution screening and as
+the Budyko-constrained reference formulation in the final comparison, so its reported
+metrics should not be treated as independent post-selection validation evidence.
+Overall, the thesis shows that physics-informed learning provides an interpretable struc-
+tural framework for Caspian Sea level modelling, but it does not automatically guarantee
+lower RMSE than a strong neural baseline, and a direct quantitative validation of the
+learned physical coefficients against independent hydrological references is left as future
+work. The most defensible conclusion is that the tested PINN formulations provide a
+useful process-aware modelling framework, while their predictive advantage depends on
+temporal resolution, loss calibration, residual scaling, and validation under changing
+hydroclimatic regimes.
+A broader extension of this work would involve a full experimental validation framework
+beyond the scope of the present thesis. Such a framework should include repeated-
+seed training for PINN-1, PINN-2, PINN-3, and the no-physics CNN–LSTM baseline;
+retraining all formulations after fixing the temporal resolution; walk-forward or expanding-
+window validation on non-stationary climate windows; sensitivity analysis of the physics-
+loss weight λphys; dynamic lake geometry through an A(H) or bathymetry-based storage–
+73
+
+
+================================================================================
+PAGE 85 of 89
+================================================================================
+
+CHAPTER 5. CONCLUSION
+elevation relation; uncertainty quantification using Monte Carlo dropout; ablation studies
+of individual physical mechanisms; and a hybrid PINN architecture that combines
+water balance, Budyko runoff partitioning, and Penman/Priestley–Taylor evaporation
+constraints.
+These extensions would allow a more robust assessment of whether physics-informed
+constraints improve not only pattern-level agreement, but also operational reliability
+under non-stationary climate conditions. In particular, future experiments should test
+whether the advantages observed for PINN-3 remain stable when all models are retrained
+across identical random seeds, whether walk-forward validation changes the ranking of
+the models under stronger regime shifts, and whether adaptive or larger physics-loss
+weights improve RMSE without reducing data fit. A further extension would be to
+quantify predictive uncertainty through stochastic inference so that model outputs could
+be interpreted not only as point predictions but also as uncertainty-aware forecasts.
+74
+
+
+================================================================================
+PAGE 86 of 89
+================================================================================
+
+Bibliography
+[1]
+L. Huang, Y. Shu, J. Yao, and D. Liu, “Investigation of Physics-Informed Methods
+for Improving Sea Surface Height Prediction Based on Neural Networks in
+the South China Sea,” Remote Sensing, vol. 17, no. 23, p. 3838, 2025. URL:
+https://www.mdpi.com/2072-4292/17/23/3838.
+[2]
+L. Podina, B. Eastman, and M. Kohandel, “Universal Physics-Informed Neural Net-
+works: Symbolic Differential Operator Discovery with Sparse Data,” Proceedings
+of ICML 2023 / PMLR 202, 2023. URL: https://openreview.net/pdf?id=
+FREvWGzoRu&.
+[3]
+M. Eftekhari, M. T. Dastorani, and M. Haji Elyasi, “Evaluation of machine
+learning methods for predicting water level fluctuations in the southern
+coasts of the Caspian Sea using GRACE and GRACE-FO satellites,”
+2024.
+URL:
+https://www.researchgate.net/publication/387825684_
+Evaluation_of_machine_learning_methods_for_predicting_water_
+level_fluctuations_in_the_southern_coasts_of_the_Caspian_Sea_
+using_GRACE_and_GRACE-FO_satellites.
+[4]
+M. Esmaeilzadeh and M. Amirzadeh, “Replication Study: Enhancing Hydrological
+Modeling with Physics-Guided Machine Learning,” arXiv:2402.13911, 2024. URL:
+https://arxiv.org/pdf/2402.13911.
+[5]
+M. Niedda, M. Pirastru, M. Castellini, and F. Giadrossich, “Simulating the hy-
+drological response of a closed catchment-lake system to recent climate and
+land-use changes in semi-arid Mediterranean environment,” Journal of Hydrology,
+vol. 517, pp. 732–745, 2014. URL: https://www.sciencedirect.com/science/
+article/abs/pii/S0022169414004685.
+[6]
+M. Raissi, P. Perdikaris, and G. E. Karniadakis, “Physics-informed neural networks:
+A deep learning framework for solving forward and inverse problems involv-
+75
+
+
+================================================================================
+PAGE 87 of 89
+================================================================================
+
+BIBLIOGRAPHY
+ing nonlinear partial differential equations,” Journal of Computational Physics,
+vol. 378, pp. 686–707, 2019. URL: https://www.sciencedirect.com/science/
+article/abs/pii/S0021999118307125.
+[7]
+M. Samant and M. Prange, “Climate-driven 21st century Caspian Sea level decline
+estimated from CMIP6 projections,” Communications Earth & Environment,
+2023. URL: https://www.nature.com/articles/s43247-023-01017-8.
+[8]
+M. Saraceni, B. Brunone, L. Silvestri, S. Meniconi, and P. Bongioannini Cerlini, “A
+Water Mass Balance-Based Procedure Using ERA5 Land Reanalysis and Level
+Observation to Reconstruct the Past Level Changes of Closed Lakes toward
+Future Management,” Journal of Hydrometeorology, vol. 26, no. 1, pp. 49–67,
+2025.
+URL:
+https://www.researchgate.net/publication/387043403_A_
+water_mass_balance-based_procedure_using_ERA5_Land_Reanalysis_
+and_level_observation_to_reconstruct_the_past_level_changes_of_
+closed_lakes_toward_future_management.
+[9]
+P. Bhasme, J. Vagadiya, and U. Bhatia, “Enhancing predictive skills in physically-
+consistent way: Physics Informed Machine Learning for Hydrological Processes,”
+arXiv:2104.11009, 2021. URL: https://arxiv.org/abs/2104.11009.
+[10] S. Cheng, P. Hulsman, A. Koppa, H. E. Beck, J. Xia, J. Xu, L. Cheng, and D.
+Miralles, “Global runoff partitioning based on Budyko-constrained machine
+learning,” Water Resources Research, vol. 61, no. 10, 2025. URL: https://
+agupubs.onlinelibrary.wiley.com/doi/pdf/10.1029/2025WR039863.
+[11] S. Cuomo, V. Schiano Di Cola, F. Giampaolo, G. Rozza, M. Raissi, and F. Piccialli,
+“Scientific Machine Learning through Physics-Informed Neural Networks: Where
+we are and What’s next,” arXiv:2201.05624, 2022. URL: https://arxiv.org/
+pdf/2201.05624.
+[12] W. Liu, P. Liu, and L. Cheng, “Identification of time-varying parameters
+of a monthly Budyko function in US MOPEX catchments and its im-
+plications,”
+Journal of Hydrology Regional Studies, vol. 59, p. 102348,
+2025.
+URL:
+https://www.researchgate.net/publication/392291957_
+Identification_of_time-varying_parameters_of_a_monthly_Budyko_
+function_in_US_MOPEX_catchments_and_its_implications.
+76
+
+
+================================================================================
+PAGE 88 of 89
+================================================================================
+
+BIBLIOGRAPHY
+Datasets
+[13] Copernicus Climate Change Service, Climate Data Store, “ERA5 post-processed
+daily-statistics on single levels from 1940 to present” [Dataset], 2024. Coper-
+nicus Climate Change Service (C3S) Climate Data Store (CDS). DOI:
+10.24381/cds.4991cf48. Accessed on 01.02.2026–28.02.2026.
+[14] Copernicus Climate Change Service, Climate Data Store, “ERA5-land post-processed
+daily-statistics from 1950 to present” [Dataset], 2024. Copernicus Climate Change
+Service (C3S) Climate Data Store (CDS). DOI: 10.24381/cds.e9c9c792. Accessed
+on 01.02.2026–28.02.2026.
+[15] H. Beaudoing and M. Rodell, NASA/GSFC/HSL, “GLDAS Noah Land Surface
+Model L4 monthly 0.25 x 0.25 degree V2.0” [Dataset], 2019. Greenbelt, Maryland,
+USA: Goddard Earth Sciences Data and Information Services Center (GES DISC).
+DOI: 10.5067/9SQ1B3ZXP2C5. Accessed on 01.03.2026–15.03.2026. M. Rodell,
+P. R. Houser, U. Jambor, J. Gottschalck, K. Mitchell, C. Meng, K. Arsenault, B.
+Cosgrove, J. Radakovich, M. Bosilovich, J. K. Entin, J. P. Walker, D. Lohmann,
+and D. Toll, “The Global Land Data Assimilation System,” Bulletin of the
+American Meteorological Society, vol. 85, pp. 381–394, 2004. DOI: 10.1175/BAMS-
+85-3-381.
+[16] H. Beaudoing and M. Rodell, NASA/GSFC/HSL, “GLDAS Noah Land Surface
+Model L4 monthly 0.25 x 0.25 degree V2.1” [Dataset], 2020. Greenbelt, Maryland,
+USA: Goddard Earth Sciences Data and Information Services Center (GES
+DISC). DOI: 10.5067/SXAVCZFAQLNO. Accessed on 01.03.2026–15.03.2026.
+M. Rodell, P. R. Houser, U. Jambor, J. Gottschalck, K. Mitchell, C. Meng,
+K. Arsenault, B. Cosgrove, J. Radakovich, M. Bosilovich, J. K. Entin, J. P.
+Walker, D. Lohmann, and D. Toll, “The Global Land Data Assimilation System,”
+Bulletin of the American Meteorological Society, vol. 85, pp. 381–394, 2004. DOI:
+10.1175/BAMS-85-3-381.
+[17] C. Schwatke, D. Dettmering, W. Bosch, and F. Seitz, “DAHITI – an innovative
+approach for estimating water level time series over inland waters using multi-
+mission satellite altimetry,” Hydrology and Earth System Sciences, vol. 19, pp.
+4345–4364, 2015. DOI: 10.5194/hess-19-4345-2015.
+[18] S. Grimaldi, P. Salamon, J. Disperati, E. Zsoter, C. Russo, A. Ramos, C. Carton
+De Wiart, C. Barnard, E. Hansford, G. Gomes, and C. Prudhomme, “River
+77
+
+
+================================================================================
+PAGE 89 of 89
+================================================================================
+
+BIBLIOGRAPHY
+discharge and related historical data from the Global Flood Awareness System,
+v4.0” [Dataset], 2022. European Commission, Joint Research Centre (JRC). DOI:
+10.24381/cds.a4fdd6b9.
+78
+
