@@ -1,4 +1,4 @@
-\documentclass[conference]{IEEEtran}
+\documentclass[conference,a4paper]{IEEEtran}
 \IEEEoverridecommandlockouts
 \usepackage{cite}
 \usepackage{amsmath,amssymb,amsfonts}
@@ -11,30 +11,50 @@
 \usepackage{textcomp}
 \usepackage{hyperref}
 \usepackage{xcolor}
+\usepackage{xurl}
+\usepackage{balance}
 \hypersetup{colorlinks=true, linkcolor=blue, citecolor=blue, urlcolor=cyan}
-
+\renewcommand{\IEEEkeywordsname}{Keywords}
 \begin{document}
 
-\title{Physics-Informed Neural Networks for Predicting Caspian Sea Level Variations}
 
-\author{\IEEEauthorblockN{Bekzat Ashirbek\IEEEauthorrefmark{1}}
-\IEEEauthorblockN{Arlan Mirseiit\IEEEauthorrefmark{1}}
-\IEEEauthorblockN{Amir Nurseit\IEEEauthorrefmark{1}}
-\IEEEauthorblockN{Anar Rakhimzhanova\IEEEauthorrefmark{1}}
-\IEEEauthorblockA{\IEEEauthorrefmark{1}\textit{Astana IT University}\\
+\title{
+\makebox[\textwidth][l]{%
+\parbox{\textwidth}{%
+\fontsize{9}{11}\selectfont
+2026 IEEE 3rd International Student Conference on Digital Generation\\
+21--23 October, 2026, Astana, Kazakhstan
+}}
+\\[1.2em]
+\fontsize{20}{24}\selectfont
+Physics-Informed Neural Networks for Predicting Caspian Sea Level Variations: A Comparative Study of Water-Balance, Budyko, and Energy-Balance Constraints
+}
+\author{
+\IEEEauthorblockN{
+Bekzat Ashirbek,
+Arlan Mirseiit,
+Amir Nurseit,
+Anar Rakhimzhanova
+}
+\IEEEauthorblockA{
 School of AI and Data Science\\
+Astana IT University\\
 Astana, Kazakhstan\\
-Emails: \{bekzatashirbek2, arionzo2005, a2n19a2n\}@gmail.com,\\
+Emails: \{bekzatashirbek2, arionzo2005, a2n19a2n\}@gmail.com,
 a.rakhymzhanova@astanait.edu.kz\\
 ORCID (Ashirbek): 0009-0007-9393-2446\\
-ORCID (Rakhimzhanova): 0000-0003-4646-0603}}
+ORCID (Mirseiit): 0009-0001-4851-5578,
+(Nurseit): 0009-0006-1380-7278\\
+ORCID (Rakhimzhanova): 0000-0003-4646-0603
+}
+}
 
 \maketitle
 
 
 
 \begin{abstract}
-We develop three Physics-Informed Neural Network (PINN) formulations --- water-balance, Budyko-constrained, and Priestley--Taylor energy-balance --- for predicting Caspian Sea $\Delta H$ variations, all sharing an identical CNN--LSTM backbone. Across 60 models trained with five random seeds, PINN-3 achieves the highest $R^2$ ($0.6939 \pm 0.0032$) with exceptional stability. Physics constraints reduce seed-to-seed $R^2$ variance by a factor of 2--17$\times$ and enable positive $R^2$ at 10-day resolution where the unconstrained baseline fails. Simple baselines (persistence: $R^2{=}0.017$, climatology: $R^2{=}0.0$) confirm the added value of all neural models. We contribute a reproducible data-integration pipeline and an empirical framework for evaluating physics constraints in closed-basin modeling.
+We develop three Physics-Informed Neural Network (PINN) formulations, based on water balance, the Budyko framework, and the Priestley Taylor energy balance, for predicting Caspian Sea level variations using an identical CNN-LSTM backbone. Across 60 models trained with five random seeds, PINN-3 achieves the highest coefficient of determination, with a mean value of 0.6939 and a standard deviation of 0.0032, while demonstrating exceptional stability. Physics constraints reduce seed-to-seed variation in the coefficient of determination by factors ranging from 2 to 17 and enable positive predictive performance at 10-day resolution where the unconstrained baseline fails. Simple persistence and climatology baselines achieve coefficient of determination values of 0.017 and 0.0, respectively, confirming the added value of the neural models. We contribute a reproducible data-integration pipeline and an empirical framework for evaluating physics constraints in closed-basin modeling.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -81,7 +101,7 @@ Data were split chronologically: training (1993--2014, 67\%), validation (2015--
 
 \subsection{CNN--LSTM Backbone}
 
-All models share an identical CNN--LSTM backbone (${\sim}339$K parameters). The spatial encoder uses two Conv2d blocks (in$\to$32$\to$64 channels, AdaptiveAvgPool to $4{\times}4$, producing 1024 features/time step). A two-layer LSTM (hidden=64, dropout=0.5) processes the 6-step sequence; only the final hidden state is retained. The regression head is Linear(64$\to$64)$\to$Activation$\to$Dropout(0.5)$\to$Linear(64$\to D_{\text{out}}$). The backbone structure (layer count, dimensions, connectivity) is identical across all models. Activation functions differ (ReLU: baseline, PINN-1; SiLU: PINN-2, PINN-3), chosen per model based on preliminary validation. While this introduces a potential confound (discussed in \S~\ref{sec:limitations}), the shared spatial and temporal architecture isolates the first-order effect of physics formulations.
+All models share an identical CNN--LSTM backbone (${\sim}339$K parameters). The spatial encoder uses two Conv2d blocks (in$\to$32$\to$64 channels, AdaptiveAvgPool to $4{\times}4$, producing 1024 features/time step). A two-layer LSTM (hidden=64, dropout=0.5) processes the 6-step sequence; only the final hidden state is retained. The regression head is Linear(64$\to$64)$\to$Activation$\to$Dropout(0.5)$\to$Linear(64$\to D_{\text{out}}$). The backbone structure (layer count, dimensions, connectivity) is identical across all models. Activation functions differ (ReLU: baseline, PINN-1; SiLU: PINN-2, PINN-3), chosen per model based on preliminary validation. While this introduces a potential confound (discussed in \S~\ref{sec:limitations}), the shared spatial and temporal architecture isolates the first-order effect of physics formulations. The shared backbone architecture is shown in Fig.~\ref{fig:architecture}.
 
 \begin{figure}[htbp]
     \centering
@@ -207,7 +227,7 @@ PINN-3         & $0.0486{\pm}0.0003$ & $0.8341{\pm}0.0016$ & $0.6939{\pm}0.0032$
 
 PINN-3 achieves the best performance with exceptional stability ($R^2$ std~=~0.0032). Physics constraints reduce seed sensitivity substantially: PINN-3~$\pm0.0032$ vs.~baseline~$\pm0.0556$. The Diebold-Mariano test~\cite{diebold1995comparing}, applied to baseline seed pairs, confirms significant inter-seed variability (DM~=~$-2.4$ to $+2.7$, $p{<}0.01$ for 7/10 pairs), quantitatively validating our claim that single-seed baseline results are unreliable.
 
-At 10-day resolution (Appendix), only physics-informed models achieve positive $R^2$ (PINN-1: $0.0827{\pm}0.0302$, PINN-2: $0.1025{\pm}0.0241$), while the baseline remains negative ($-0.1722{\pm}0.0555$).
+At 10-day resolution (Appendix), only physics-informed models achieve positive $R^2$ (PINN-1: $0.0827{\pm}0.0302$, PINN-2: $0.1025{\pm}0.0241$), while the baseline remains negative ($-0.1722{\pm}0.0555$). Fig.~\ref{fig:pinn3_monthly} shows the PINN-3 reconstruction over the test period.
 
 \begin{figure}[htbp]
     \centering
@@ -324,22 +344,19 @@ This study provides the first systematic comparison of physics-informed neural n
 
 Three practical findings emerge for the ML-for-science community: \textit{(1)} multi-seed evaluation is not optional---single-seed baseline $R^2$ varies by $\pm0.0556$, enough to incorrectly rank models; \textit{(2)} not all physics constraints improve skill---Budyko underperforms at monthly scale despite being the most theoretically grounded, while Priestley--Taylor excels; and \textit{(3)} the right physics constraint provides both accuracy and stability, but only when matched to the dominant process (here, evaporation over runoff).
 
-For Caspian Sea forecasting, PINN-3 is recommended. The reproducible pipeline, public dataset~\cite{hersbach2020era5,munoz2021eraland,rodell2004gldas,schwatke2015dahiti,grimaldi2022glofas}, and open-source code at \texttt{https://github.com/fulaura/Caspian-Sea-level-prediction-PINN} provide a foundation for extending physics-aware modeling to other closed-basin hydrological systems.
+For Caspian Sea forecasting, PINN-3 is recommended. The reproducible pipeline, public dataset~\cite{hersbach2020era5,munoz2021eraland,rodell2004gldas,schwatke2015dahiti,grimaldi2022glofas}, and open-source code at \url{https://github.com/fulaura/Caspian-Sea-level-prediction-PINN} provide a foundation for extending physics-aware modeling to other
+closed-basin hydrological systems.
 
-\section*{Acknowledgment}
-The authors thank Dr. Anar Rakhimzhanova for supervision and guidance throughout this research.
-
-\bibliographystyle{IEEEtran}
-\bibliography{references}
-
-\newpage
 \section*{Appendix: Supplementary Results}
 
 \subsection{10-Day Resolution}
 
+Table~\ref{tab:10day} summarizes the multi-seed results at 10-day resolution.
+
 \begin{table}[htbp]
 \centering
 \caption{10-day multi-seed (mean $\pm$ std, $n{=}5$).}
+\label{tab:10day}
 \begin{tabular}{lcc}
 \toprule
 \textbf{Model} & \textbf{RMSE (m)} & \textbf{$R^2$} \\
@@ -354,9 +371,12 @@ PINN-3   & $0.0472{\pm}0.0011$ & $\phantom{-}0.0721{\pm}0.0410$ \\
 
 \subsection{Thermodynamic Walk-Forward}
 
+Table~\ref{tab:thermo_walkforward} reports the thermodynamic walk-forward results across the three folds.
+
 \begin{table}[htbp]
 \centering
 \caption{Thermodynamic walk-forward (best per fold in bold).}
+\label{tab:thermo_walkforward}
 \footnotesize
 \begin{tabular}{llcc}
 \toprule
@@ -390,6 +410,11 @@ MC dropout (retrained PINN-1, 100 passes) achieved RMSE~=~0.0552~m, $R^2{=}0.605
 
 \subsection{Data and Code Availability}
 
-ERA5, ERA5-Land, GLDAS, DAHITI, and GloFAS data are publicly available~\cite{hersbach2020era5,munoz2021eraland,rodell2004gldas,schwatke2015dahiti,grimaldi2022glofas}. Code and trained models are available at \texttt{https://github.com/fulaura/Caspian-Sea-level-prediction-PINN}.
+ERA5, ERA5-Land, GLDAS, DAHITI, and GloFAS data are publicly available~\cite{hersbach2020era5,munoz2021eraland,rodell2004gldas,schwatke2015dahiti,grimaldi2022glofas}. Code and trained models are available at \url{https://github.com/fulaura/Caspian-Sea-level-prediction-PINN}
+\section*{Acknowledgment}
+The first three authors thank Dr. A. Rakhimzhanova for supervision and guidance throughout this research.
+\balance
+\bibliographystyle{IEEEtran}
+\bibliography{references}
 
 \end{document}
